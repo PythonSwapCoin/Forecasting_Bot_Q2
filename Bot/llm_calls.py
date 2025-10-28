@@ -146,90 +146,26 @@ def extract_and_run_python_code(llm_output: str) -> str:
 
     return new_stdout.getvalue()
 
-# Calls o4-mini via OpenRouter instead of direct OpenAI
+# Calls o4-mini using personal OpenAI credentials
 async def call_gpt(prompt):
-    if not OPENROUTER_API_KEY:
-        raise ValueError("OPENROUTER_API_KEY not found in environment variables")
-    
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    payload = {
-        "model": "openai/o4-mini",
-        "messages": [
+    client = OpenAI(api_key=OPENAI_API_KEY)
+    response = client.chat.completions.create(
+        model="o4-mini",
+        messages=[
             {"role": "user", "content": gpt_context + "\n" + prompt}
-        ],
-        "max_tokens": 16000
-    }
-    headers = {
-        "accept": "application/json",
-        "content-type": "application/json",
-        "authorization": f"Bearer {OPENROUTER_API_KEY}"
-    }
-
-    max_retries = 3
-    backoff_base = 2
-
-    for attempt in range(1, max_retries + 1):
-        try:
-            async with aiohttp.ClientSession() as session:
-                timeout = aiohttp.ClientTimeout(total=300)
-                async with session.post(url, json=payload, headers=headers, timeout=timeout) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        return data['choices'][0]['message']['content']
-                    else:
-                        response_text = await response.text()
-                        write(f"[call_gpt] Error: HTTP {response.status}: {response_text}")
-                        
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            write(f"[call_gpt] Attempt {attempt} failed: {e}")
-        
-        if attempt < max_retries:
-            wait_time = backoff_base * attempt
-            await asyncio.sleep(wait_time)
-        else:
-            raise Exception(f"OpenRouter API failed after {max_retries} attempts")
+        ]
+    )
+    return response.choices[0].message.content
 
 async def call_gpt_o3_personal(prompt):
-    if not OPENROUTER_API_KEY:
-        raise ValueError("OPENROUTER_API_KEY not found in environment variables")
-    
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    payload = {
-        "model": "openai/o3",
-        "messages": [
+    client = OpenAI(api_key=OPENAI_API_KEY)
+    response = client.chat.completions.create(
+        model="o3",
+        messages=[
             {"role": "user", "content": gpt_context + "\n" + prompt}
-        ],
-        "max_tokens": 16000
-    }
-    headers = {
-        "accept": "application/json",
-        "content-type": "application/json",
-        "authorization": f"Bearer {OPENROUTER_API_KEY}"
-    }
-
-    max_retries = 3
-    backoff_base = 2
-
-    for attempt in range(1, max_retries + 1):
-        try:
-            async with aiohttp.ClientSession() as session:
-                timeout = aiohttp.ClientTimeout(total=300)
-                async with session.post(url, json=payload, headers=headers, timeout=timeout) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        return data['choices'][0]['message']['content']
-                    else:
-                        response_text = await response.text()
-                        write(f"[call_gpt_o3_personal] Error: HTTP {response.status}: {response_text}")
-                        
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            write(f"[call_gpt_o3_personal] Attempt {attempt} failed: {e}")
-        
-        if attempt < max_retries:
-            wait_time = backoff_base * attempt
-            await asyncio.sleep(wait_time)
-        else:
-            raise Exception(f"OpenRouter API failed after {max_retries} attempts")
+        ]
+    )
+    return response.choices[0].message.content
 
 
 async def call_gpt_o3(prompt):

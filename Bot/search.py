@@ -29,7 +29,6 @@ ASKNEWS_SECRET = os.getenv("ASKNEWS_SECRET")
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
 METACULUS_TOKEN = os.getenv("METACULUS_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -263,31 +262,14 @@ async def agentic_search(query: str) -> str:
             for sq, source in search_queries_with_source:
                 write(f"[agentic_search] Searching: {sq} (Source: {source})")
                 if source in ("Google", "Google News"):
-                    if SERPER_KEY:
-                        search_tasks.append(
-                            google_search_agentic(
-                                sq,
-                                is_news=(source == "Google News")
-                            )
+                    search_tasks.append(
+                        google_search_agentic(
+                            sq,
+                            is_news=(source == "Google News")
                         )
-                    elif PERPLEXITY_API_KEY:
-                        write(f"[agentic_search] No Serper API, using Perplexity for '{sq}'")
-                        search_tasks.append(call_perplexity(sq))
-                    else:
-                        write(f"[agentic_search] No search APIs available, skipping '{sq}'")
+                    )
                 elif source == "Perplexity":
-                    if PERPLEXITY_API_KEY:
-                        search_tasks.append(call_perplexity(sq))
-                    elif SERPER_KEY:
-                        write(f"[agentic_search] No Perplexity API, using Google for '{sq}'")
-                        search_tasks.append(
-                            google_search_agentic(
-                                sq,
-                                is_news=False
-                            )
-                        )
-                    else:
-                        write(f"[agentic_search] No search APIs available, skipping '{sq}'")
+                    search_tasks.append(call_perplexity(sq))
             
             # Gather search results
             search_results_list = await asyncio.gather(*search_tasks, return_exceptions=True)
@@ -441,58 +423,17 @@ async def google_search(query, is_news=False, date_before=None):
 
 
 async def call_gpt(prompt, step=1):
-    """Call GPT via OpenRouter instead of direct OpenAI API"""
-    if not OPENROUTER_API_KEY:
-        write("[call_gpt] ERROR: OPENROUTER_API_KEY not found")
-        return "Error: OpenRouter API key not configured"
-    
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    payload = {
-        "model": "openai/o3",
-        "messages": [
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        "max_tokens": 16000
-    }
-    headers = {
-        "accept": "application/json",
-        "content-type": "application/json",
-        "authorization": f"Bearer {OPENROUTER_API_KEY}"
-    }
+    client = OpenAI(api_key=OPENAI_API_KEY)
 
-    max_retries = 3
-    backoff_base = 2
-
-    for attempt in range(1, max_retries + 1):
-        try:
-            write(f"[call_gpt] Attempt {attempt} for step {step}")
-            async with aiohttp.ClientSession() as session:
-                timeout = aiohttp.ClientTimeout(total=300)
-                async with session.post(url, json=payload, headers=headers, timeout=timeout) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        content = data['choices'][0]['message']['content']
-                        write(f"[call_gpt] [OK] Success on attempt {attempt}")
-                        return content.strip()
-                    else:
-                        response_text = await response.text()
-                        write(f"[call_gpt] [ERROR] Error: HTTP {response.status}: {response_text}")
-                        
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            write(f"[call_gpt] [WARN] Attempt {attempt} failed: {e}")
-        
-        if attempt < max_retries:
-            wait_time = backoff_base * attempt
-            write(f"[call_gpt] [RETRY] Retrying in {wait_time} seconds...")
-            await asyncio.sleep(wait_time)
-        else:
-            write(f"[call_gpt] [ERROR] Max retries ({max_retries}) reached. Giving up.")
-            return f"Error: OpenRouter API failed after {max_retries} attempts."
-
-    return "Unexpected error in call_gpt"
+    try:
+        response = client.responses.create(
+            model="o3",
+            input=prompt
+        )
+        return response.output_text
+    except Exception as e:
+        write(f"[call_gpt] Error: {str(e)}")
+        return f"Error calling OpenAI API: {str(e)}"
 
 
 async def google_search_and_scrape(query, is_news, question_details, date_before=None):
@@ -646,13 +587,6 @@ async def process_search_queries(response: str, forecaster_id: str, question_det
 
         write(f"Forecaster {forecaster_id}: Processing {len(search_queries)} search queries")
 
-        # Check API availability
-        has_serper = bool(SERPER_KEY)
-        has_perplexity = bool(PERPLEXITY_API_KEY)
-        has_asknews = bool(ASKNEWS_CLIENT_ID and ASKNEWS_SECRET)
-        
-        write(f"[API Status] Serper: {'✓' if has_serper else '✗'}, Perplexity: {'✓' if has_perplexity else '✗'}, AskNews: {'✓' if has_asknews else '✗'}")
-
         # 4) Kick off one asyncio task per query
         tasks = []
         query_sources = []  # Track which source goes with which task
@@ -672,55 +606,24 @@ async def process_search_queries(response: str, forecaster_id: str, question_det
             query_sources.append((query, source))
 
             if source in ("Google", "Google News"):
-                if has_serper:
-                    # pass question_details through so summarizer can fill the prompt
-                    tasks.append(
-                        google_search_and_scrape(
-                            query,
-                            is_news=(source == "Google News"),
-                            question_details=question_details,
-                            date_before=question_details.get("resolution_date")
-                        )
+                # pass question_details through so summarizer can fill the prompt
+                tasks.append(
+                    google_search_and_scrape(
+                        query,
+                        is_news=(source == "Google News"),
+                        question_details=question_details,
+                        date_before=question_details.get("resolution_date")
                     )
-                elif has_perplexity:
-                    # Fallback to Perplexity if no Serper
-                    write(f"Forecaster {forecaster_id}: No Serper API, using Perplexity for '{query}'")
-                    tasks.append(call_perplexity(query))
-                else:
-                    write(f"Forecaster {forecaster_id}: No search APIs available, skipping '{query}'")
+                )
             elif source == "Assistant":
-                if has_asknews:
-                    tasks.append(call_asknews(query))
-                elif has_perplexity:
-                    # Fallback to Perplexity if no AskNews
-                    write(f"Forecaster {forecaster_id}: No AskNews API, using Perplexity for '{query}'")
-                    tasks.append(call_perplexity(query))
-                else:
-                    write(f"Forecaster {forecaster_id}: No Assistant APIs available, skipping '{query}'")
+                tasks.append(call_asknews(query))
             elif source == "Agent":
-                if has_serper or has_perplexity:
-                    tasks.append(agentic_search(query))
-                else:
-                    write(f"Forecaster {forecaster_id}: No search APIs available for Agent, skipping '{query}'")
+                tasks.append(agentic_search(query))
             elif source == "Perplexity":
-                if has_perplexity:
-                    tasks.append(call_perplexity(query))
-                elif has_serper:
-                    # Fallback to Google search if no Perplexity
-                    write(f"Forecaster {forecaster_id}: No Perplexity API, using Google for '{query}'")
-                    tasks.append(
-                        google_search_and_scrape(
-                            query,
-                            is_news=False,
-                            question_details=question_details,
-                            date_before=question_details.get("resolution_date")
-                        )
-                    )
-                else:
-                    write(f"Forecaster {forecaster_id}: No search APIs available, skipping '{query}'")
+                tasks.append(call_perplexity(query))
 
         if not tasks:
-            write(f"Forecaster {forecaster_id}: No tasks generated - no available search APIs")
+            write(f"Forecaster {forecaster_id}: No tasks generated")
             return ""
 
         # 5) Await all tasks
