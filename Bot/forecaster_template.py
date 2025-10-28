@@ -5,7 +5,7 @@ import os
 from aiohttp import ClientSession, ClientTimeout
 import dotenv
 from search import call_asknews, call_perplexity
-from llm_calls import call_claude
+from llm_calls import call_claude, call_claude_with_fallback, call_gpt_o4_mini_with_fallback, call_forecaster_1, call_forecaster_2, call_forecaster_3, call_forecaster_4, call_forecaster_5
 from openai import OpenAI
 import asyncio
 
@@ -109,50 +109,96 @@ async def run_research(question: str, write=print) -> str:
 
     return research
 
-# Calls o4-mini using personal OpenAI credentials
+# Calls o4-mini via OpenRouter instead of direct OpenAI
 async def call_llm(prompt):
-    client = OpenAI(api_key=OPENAI_API_KEY)
-    response = client.responses.create(
-        model="o4-mini",
-        input= prompt
-    )
-    return response.output_text
+    if not OPENROUTER_API_KEY:
+        raise ValueError("OPENROUTER_API_KEY not found in environment variables")
+    
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    payload = {
+        "model": "openai/o4-mini",
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 16000
+    }
+    headers = {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "authorization": f"Bearer {OPENROUTER_API_KEY}"
+    }
+
+    max_retries = 3
+    backoff_base = 2
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            async with aiohttp.ClientSession() as session:
+                timeout = aiohttp.ClientTimeout(total=300)
+                async with session.post(url, json=payload, headers=headers, timeout=timeout) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return data['choices'][0]['message']['content']
+                    else:
+                        response_text = await response.text()
+                        write(f"[call_llm] Error: HTTP {response.status}: {response_text}")
+                        
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            write(f"[call_llm] Attempt {attempt} failed: {e}")
+        
+        if attempt < max_retries:
+            wait_time = backoff_base * attempt
+            await asyncio.sleep(wait_time)
+        else:
+            raise Exception(f"OpenRouter API failed after {max_retries} attempts")
 
 
 async def call_gpt(prompt):
-    # We are temporarily going to short gpt while my o1 credits are out
-    prompt = prompt
-    try:
-        url = "https://llm-proxy.metaculus.com/proxy/openai/v1/chat/completions"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Token {METACULUS_TOKEN}"
-        }
+    # Use OpenRouter instead of direct OpenAI
+    if not OPENROUTER_API_KEY:
+        raise ValueError("OPENROUTER_API_KEY not found in environment variables")
+    
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    payload = {
+        "model": "openai/o4-mini",
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 16000
+    }
+    headers = {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "authorization": f"Bearer {OPENROUTER_API_KEY}"
+    }
+
+    max_retries = 3
+    backoff_base = 2
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            async with aiohttp.ClientSession() as session:
+                timeout = aiohttp.ClientTimeout(total=300)
+                async with session.post(url, json=payload, headers=headers, timeout=timeout) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        answer = data['choices'][0]['message']['content']
+                        if answer is None:
+                            raise ValueError("No answer returned from GPT")
+                        return answer
+                    else:
+                        response_text = await response.text()
+                        write(f"[call_gpt] Error: HTTP {response.status}: {response_text}")
+                        
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            write(f"[call_gpt] Attempt {attempt} failed: {e}")
         
-        data = {
-            "model": "o1",
-            "messages": [{"role": "user", "content": prompt}],
-        }
-        
-        timeout = ClientTimeout(total=300)  # 5 minutes total timeout
-        
-        async with ClientSession(timeout=timeout) as session:
-            async with session.post(url, headers=headers, json=data) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    write(f"API error (status {response.status}): {error_text}")
-                    response.raise_for_status()
-                
-                result = await response.json()
-                
-                answer = result['choices'][0]['message']['content']
-                if answer is None:
-                    raise ValueError("No answer returned from GPT")
-                return answer
-                
-    except Exception as e:
-        write(f"Error in call_gpt: {str(e)}")
-        return f"Error generating response: {str(e)}"
+        if attempt < max_retries:
+            wait_time = backoff_base * attempt
+            await asyncio.sleep(wait_time)
+        else:
+            write(f"Error in call_gpt: OpenRouter API failed after {max_retries} attempts")
+            return f"Error generating response: OpenRouter API failed after {max_retries} attempts"
 
 
 def extract_binary_probability(text: str) -> float:
@@ -214,10 +260,27 @@ def format_mcq_prompt(details: dict, summary: str) -> str:
 async def binary_forecast(details: dict, write=print) -> tuple[float, str]:
     summary = await run_research(details["title"], write)
     prompt = format_binary_prompt(details, summary)
-    responses = await asyncio.gather(*[call_llm(prompt) for _ in range(5)])
-    parsed = [extract_binary_probability(r) for r in responses]
+    
+    # Use configurable forecaster models via OpenRouter
+    responses = await asyncio.gather(
+        call_forecaster_1(prompt),  # forecaster 1 - claude-haiku-4.5
+        call_forecaster_2(prompt),  # forecaster 2 - gemini-2.5-flash
+        call_forecaster_3(prompt),  # forecaster 3 - gpt-5-chat
+        call_forecaster_4(prompt),  # forecaster 4 - o4-mini
+        call_forecaster_5(prompt),  # forecaster 5 - grok-4-fast
+    )
+    
+    parsed = []
+    for i, r in enumerate(responses):
+        try:
+            prob = extract_binary_probability(r)
+            parsed.append(prob)
+        except Exception as e:
+            write(f"WARNING: Error extracting probability from response {i+1}: {e}")
+            parsed.append(50.0)  # Default to 50% if extraction fails
+    
     avg = np.mean(parsed)
-    comment = f"Binary forecast (mean): {avg}%\n\n" + "\n\n".join(responses)
+    comment = f"Binary forecast (mean): {avg}%\n\n" + "\n\n".join(f"=== Forecaster {i+1} ===\n{r}" for i, r in enumerate(responses))
     write(comment)
     return avg, comment
 
@@ -239,7 +302,7 @@ async def multiple_choice_forecast(details: dict, write=print) -> tuple[dict[str
             extracted.append(probs)
             outputs.append(response)
         except Exception as e:
-            write(f"⚠️ Error extracting probabilities: {e}")
+            write(f"WARNING Error extracting probabilities: {e}")
             write("Skipping this response.\n")
     
     if not extracted:

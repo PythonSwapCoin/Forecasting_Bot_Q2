@@ -29,6 +29,7 @@ ASKNEWS_SECRET = os.getenv("ASKNEWS_SECRET")
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
 METACULUS_TOKEN = os.getenv("METACULUS_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -240,7 +241,7 @@ async def agentic_search(query: str) -> str:
             # Extract search queries with sources
             queries_text = search_queries_match.group(1).strip()
             # Parse format: X. [Query] (Source)
-            search_queries_with_source = re.findall(r'\d+\.\s*([^(]+?)\s*\((Google|Google News)\)', queries_text)
+            search_queries_with_source = re.findall(r'\d+\.\s*([^(]+?)\s*\((Google|Google News|Perplexity)\)', queries_text)
             
             if not search_queries_with_source:
                 if step == 0:
@@ -261,12 +262,32 @@ async def agentic_search(query: str) -> str:
             search_tasks = []
             for sq, source in search_queries_with_source:
                 write(f"[agentic_search] Searching: {sq} (Source: {source})")
-                search_tasks.append(
-                    google_search_agentic(
-                        sq,
-                        is_news=(source == "Google News")
-                    )
-                )
+                if source in ("Google", "Google News"):
+                    if SERPER_KEY:
+                        search_tasks.append(
+                            google_search_agentic(
+                                sq,
+                                is_news=(source == "Google News")
+                            )
+                        )
+                    elif PERPLEXITY_API_KEY:
+                        write(f"[agentic_search] No Serper API, using Perplexity for '{sq}'")
+                        search_tasks.append(call_perplexity(sq))
+                    else:
+                        write(f"[agentic_search] No search APIs available, skipping '{sq}'")
+                elif source == "Perplexity":
+                    if PERPLEXITY_API_KEY:
+                        search_tasks.append(call_perplexity(sq))
+                    elif SERPER_KEY:
+                        write(f"[agentic_search] No Perplexity API, using Google for '{sq}'")
+                        search_tasks.append(
+                            google_search_agentic(
+                                sq,
+                                is_news=False
+                            )
+                        )
+                    else:
+                        write(f"[agentic_search] No search APIs available, skipping '{sq}'")
             
             # Gather search results
             search_results_list = await asyncio.gather(*search_tasks, return_exceptions=True)
@@ -293,7 +314,7 @@ async def agentic_search(query: str) -> str:
     steps_used = step + 1
     total_cost = calculate_cost(total_input_tokens, total_output_tokens)
     
-    print(f"\n🔍 Agentic Search Summary:")
+    print(f"\n[INFO] Agentic Search Summary:")
     print(f"   Steps used: {steps_used}")
     print(f"   Total tokens: {total_input_tokens + total_output_tokens:,} ({total_input_tokens:,} input + {total_output_tokens:,} output)")
     print(f"   Estimated cost: ${total_cost:.4f}")
@@ -343,23 +364,23 @@ async def call_perplexity(prompt: str) -> str:
                         data = await response.json()
                         content = data['choices'][0]['message']['content']
                         content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL)
-                        write(f"[Perplexity API] ✅ Success on attempt {attempt}")
+                        write(f"[Perplexity API] [OK] Success on attempt {attempt}")
                         return content.strip()
                     else:
                         response_text = await response.text()
-                        write(f"[Perplexity API] ❌ Error: HTTP {response.status}: {response_text}")
+                        write(f"[Perplexity API] [ERROR] Error: HTTP {response.status}: {response_text}")
                         # Continue to retry on non-200 response
                         
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            write(f"[Perplexity API] ⚠️ Attempt {attempt} failed: {e}")
+            write(f"[Perplexity API] [WARN] Attempt {attempt} failed: {e}")
         
         # Only enter retry logic if not on last attempt
         if attempt < max_retries:
             wait_time = backoff_base * attempt
-            write(f"[Perplexity API] 🔁 Retrying in {wait_time} seconds...")
+            write(f"[Perplexity API] [RETRY] Retrying in {wait_time} seconds...")
             await asyncio.sleep(wait_time)
         else:
-            write(f"[Perplexity API] ❌ Max retries ({max_retries}) reached. Giving up.")
+            write(f"[Perplexity API] [ERROR] Max retries ({max_retries}) reached. Giving up.")
             return f"Error: Perplexity API failed after {max_retries} attempts. The system will continue with other available data."
 
     # Should never reach here
@@ -397,12 +418,12 @@ async def google_search(query, is_news=False, date_before=None):
                         item_date = parse_date(item_date_str)
                         if date_before:
                             if item_date != "Unknown" and validate_time(date_before, item_date):
-                                write(f"[google_search] ✅ Keeping: {item_url} (date: {item_date})")
+                                write(f"[google_search] [OK] Keeping: {item_url} (date: {item_date})")
                                 filtered_items.append(item)
                             else:
-                                write(f"[google_search] ❌ Dropped by date: {item_url} (date: {item_date})")
+                                write(f"[google_search] [SKIP] Dropped by date: {item_url} (date: {item_date})")
                         else:
-                            write(f"[google_search] ✅ Keeping: {item_url}")
+                            write(f"[google_search] [OK] Keeping: {item_url}")
                             filtered_items.append(item)
 
                         if len(filtered_items) >=12:
@@ -420,17 +441,58 @@ async def google_search(query, is_news=False, date_before=None):
 
 
 async def call_gpt(prompt, step=1):
-    client = OpenAI(api_key=OPENAI_API_KEY)
+    """Call GPT via OpenRouter instead of direct OpenAI API"""
+    if not OPENROUTER_API_KEY:
+        write("[call_gpt] ERROR: OPENROUTER_API_KEY not found")
+        return "Error: OpenRouter API key not configured"
+    
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    payload = {
+        "model": "openai/o3",
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "max_tokens": 16000
+    }
+    headers = {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "authorization": f"Bearer {OPENROUTER_API_KEY}"
+    }
 
-    try:
-        response = client.responses.create(
-            model="o3",
-            input=prompt
-        )
-        return response.output_text
-    except Exception as e:
-        write(f"[call_gpt] Error: {str(e)}")
-        return f"Error calling OpenAI API: {str(e)}"
+    max_retries = 3
+    backoff_base = 2
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            write(f"[call_gpt] Attempt {attempt} for step {step}")
+            async with aiohttp.ClientSession() as session:
+                timeout = aiohttp.ClientTimeout(total=300)
+                async with session.post(url, json=payload, headers=headers, timeout=timeout) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        content = data['choices'][0]['message']['content']
+                        write(f"[call_gpt] [OK] Success on attempt {attempt}")
+                        return content.strip()
+                    else:
+                        response_text = await response.text()
+                        write(f"[call_gpt] [ERROR] Error: HTTP {response.status}: {response_text}")
+                        
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            write(f"[call_gpt] [WARN] Attempt {attempt} failed: {e}")
+        
+        if attempt < max_retries:
+            wait_time = backoff_base * attempt
+            write(f"[call_gpt] [RETRY] Retrying in {wait_time} seconds...")
+            await asyncio.sleep(wait_time)
+        else:
+            write(f"[call_gpt] [ERROR] Max retries ({max_retries}) reached. Giving up.")
+            return f"Error: OpenRouter API failed after {max_retries} attempts."
+
+    return "Unexpected error in call_gpt"
 
 
 async def google_search_and_scrape(query, is_news, question_details, date_before=None):
@@ -439,13 +501,13 @@ async def google_search_and_scrape(query, is_news, question_details, date_before
         urls = await google_search(query, is_news, date_before)
 
         if not urls:
-            write(f"[google_search_and_scrape] ❌ No URLs returned for query: '{query}'")
+            write(f"[google_search_and_scrape] [ERROR] No URLs returned for query: '{query}'")
             return f"<Summary query=\"{query}\">No URLs returned from Google.</Summary>\n"
 
         async with FastContentExtractor() as extractor:
-            write(f"[google_search_and_scrape] 🔍 Starting content extraction for {len(urls)} URLs")
+            write(f"[google_search_and_scrape] [INFO] Starting content extraction for {len(urls)} URLs")
             results = await extractor.extract_content(urls)
-            write(f"[google_search_and_scrape] ✅ Finished content extraction")
+            write(f"[google_search_and_scrape] [OK] Finished content extraction")
 
         summarize_tasks = []
         no_results = 3
@@ -455,20 +517,20 @@ async def google_search_and_scrape(query, is_news, question_details, date_before
                 break  
             content = (data.get('content') or '').strip()
             if len(content.split()) < 100:
-                write(f"[google_search_and_scrape] ⚠️ Skipping low-content article: {url}")
+                write(f"[google_search_and_scrape] [WARN] Skipping low-content article: {url}")
                 continue
             if content:
                 truncated = content[:8000]
-                write(f"[google_search_and_scrape] ✂️ Truncated content for summarization: {len(truncated)} chars from {url}")
+                write(f"[google_search_and_scrape] [TRUNC] Truncated content for summarization: {len(truncated)} chars from {url}")
                 summarize_tasks.append(
                     asyncio.create_task(summarize_article(truncated, question_details))
                 )
                 valid_urls.append(url)
             else:
-                write(f"[google_search_and_scrape] ⚠️ No content for {url}, skipping summarization.")
+                write(f"[google_search_and_scrape] [WARN] No content for {url}, skipping summarization.")
 
         if not summarize_tasks:
-            write("[google_search_and_scrape] ⚠️ Warning: No content to summarize")
+            write("[google_search_and_scrape] [WARN] Warning: No content to summarize")
             return f"<Summary query=\"{query}\">No usable content extracted from any URL.</Summary>\n"
 
         summaries = await asyncio.gather(*summarize_tasks, return_exceptions=True)
@@ -476,7 +538,7 @@ async def google_search_and_scrape(query, is_news, question_details, date_before
         output = ""
         for url, summary in zip(valid_urls, summaries):
             if isinstance(summary, Exception):
-                write(f"[google_search_and_scrape] ❌ Error summarizing {url}: {summary}")
+                write(f"[google_search_and_scrape] [ERROR] Error summarizing {url}: {summary}")
                 output += f"\n<Summary source=\"{url}\">\nError summarizing content: {str(summary)}\n</Summary>\n"
             else:
                 output += f"\n<Summary source=\"{url}\">\n{summary}\n</Summary>\n"
@@ -506,13 +568,13 @@ async def google_search_agentic(query, is_news=False):
         urls = await google_search(query, is_news)
 
         if not urls:
-            write(f"[google_search_agentic] ❌ No URLs returned for query: '{query}'")
+            write(f"[google_search_agentic] [ERROR] No URLs returned for query: '{query}'")
             return f"<RawContent query=\"{query}\">No URLs returned from Google.</RawContent>\n"
 
         async with FastContentExtractor() as extractor:
-            write(f"[google_search_agentic] 🔍 Starting content extraction for {len(urls)} URLs")
+            write(f"[google_search_agentic] [INFO] Starting content extraction for {len(urls)} URLs")
             results = await extractor.extract_content(urls)
-            write(f"[google_search_agentic] ✅ Finished content extraction")
+            write(f"[google_search_agentic] [OK] Finished content extraction")
 
         output = ""
         no_results = 3
@@ -524,19 +586,19 @@ async def google_search_agentic(query, is_news=False):
                 
             content = (data.get('content') or '').strip()
             if len(content.split()) < 100:
-                write(f"[google_search_agentic] ⚠️ Skipping low-content article: {url}")
+                write(f"[google_search_agentic] [WARN] Skipping low-content article: {url}")
                 continue
                 
             if content:
                 truncated = content[:8000]
-                write(f"[google_search_agentic] ✂️ Including content: {len(truncated)} chars from {url}")
+                write(f"[google_search_agentic] [TRUNC] Including content: {len(truncated)} chars from {url}")
                 output += f"\n<RawContent source=\"{url}\">\n{truncated}\n</RawContent>\n"
                 results_count += 1
             else:
-                write(f"[google_search_agentic] ⚠️ No content for {url}, skipping.")
+                write(f"[google_search_agentic] [WARN] No content for {url}, skipping.")
 
         if not output:
-            write("[google_search_agentic] ⚠️ Warning: No usable content found")
+            write("[google_search_agentic] [WARN] Warning: No usable content found")
             return f"<RawContent query=\"{query}\">No usable content extracted from any URL.</RawContent>\n"
 
         return output
@@ -584,6 +646,13 @@ async def process_search_queries(response: str, forecaster_id: str, question_det
 
         write(f"Forecaster {forecaster_id}: Processing {len(search_queries)} search queries")
 
+        # Check API availability
+        has_serper = bool(SERPER_KEY)
+        has_perplexity = bool(PERPLEXITY_API_KEY)
+        has_asknews = bool(ASKNEWS_CLIENT_ID and ASKNEWS_SECRET)
+        
+        write(f"[API Status] Serper: {'✓' if has_serper else '✗'}, Perplexity: {'✓' if has_perplexity else '✗'}, AskNews: {'✓' if has_asknews else '✗'}")
+
         # 4) Kick off one asyncio task per query
         tasks = []
         query_sources = []  # Track which source goes with which task
@@ -599,31 +668,59 @@ async def process_search_queries(response: str, forecaster_id: str, question_det
             if not query:
                 continue
 
-            # Map Perplexity to Agent for backward compatibility
-            if source == "Perplexity":
-                source = "Agent"
-                write(f"Forecaster {forecaster_id}: Mapping Perplexity → Agent for query='{query}'")
-            
             write(f"Forecaster {forecaster_id}: Query='{query}' Source={source}")
             query_sources.append((query, source))
 
             if source in ("Google", "Google News"):
-                # pass question_details through so summarizer can fill the prompt
-                tasks.append(
-                    google_search_and_scrape(
-                        query,
-                        is_news=(source == "Google News"),
-                        question_details=question_details,
-                        date_before=question_details.get("resolution_date")
+                if has_serper:
+                    # pass question_details through so summarizer can fill the prompt
+                    tasks.append(
+                        google_search_and_scrape(
+                            query,
+                            is_news=(source == "Google News"),
+                            question_details=question_details,
+                            date_before=question_details.get("resolution_date")
+                        )
                     )
-                )
+                elif has_perplexity:
+                    # Fallback to Perplexity if no Serper
+                    write(f"Forecaster {forecaster_id}: No Serper API, using Perplexity for '{query}'")
+                    tasks.append(call_perplexity(query))
+                else:
+                    write(f"Forecaster {forecaster_id}: No search APIs available, skipping '{query}'")
             elif source == "Assistant":
-                tasks.append(call_asknews(query))
+                if has_asknews:
+                    tasks.append(call_asknews(query))
+                elif has_perplexity:
+                    # Fallback to Perplexity if no AskNews
+                    write(f"Forecaster {forecaster_id}: No AskNews API, using Perplexity for '{query}'")
+                    tasks.append(call_perplexity(query))
+                else:
+                    write(f"Forecaster {forecaster_id}: No Assistant APIs available, skipping '{query}'")
             elif source == "Agent":
-                tasks.append(agentic_search(query))
+                if has_serper or has_perplexity:
+                    tasks.append(agentic_search(query))
+                else:
+                    write(f"Forecaster {forecaster_id}: No search APIs available for Agent, skipping '{query}'")
+            elif source == "Perplexity":
+                if has_perplexity:
+                    tasks.append(call_perplexity(query))
+                elif has_serper:
+                    # Fallback to Google search if no Perplexity
+                    write(f"Forecaster {forecaster_id}: No Perplexity API, using Google for '{query}'")
+                    tasks.append(
+                        google_search_and_scrape(
+                            query,
+                            is_news=False,
+                            question_details=question_details,
+                            date_before=question_details.get("resolution_date")
+                        )
+                    )
+                else:
+                    write(f"Forecaster {forecaster_id}: No search APIs available, skipping '{query}'")
 
         if not tasks:
-            write(f"Forecaster {forecaster_id}: No tasks generated")
+            write(f"Forecaster {forecaster_id}: No tasks generated - no available search APIs")
             return ""
 
         # 5) Await all tasks
@@ -635,7 +732,7 @@ async def process_search_queries(response: str, forecaster_id: str, question_det
         # 6) Format the outputs
         for (query, source), result in zip(query_sources, results):
             if isinstance(result, Exception):
-                write(f"[process_search_queries] ❌ Forecaster {forecaster_id}: Error for '{query}' → {str(result)}")
+                write(f"[process_search_queries] [ERROR] Forecaster {forecaster_id}: Error for '{query}' -> {str(result)}")
                 # Add a message about the error in the formatted results
                 if source == "Assistant":
                     formatted_results += f"\n<Asknews_articles>\nQuery: {query}\nError retrieving results: {str(result)}\n</Asknews_articles>\n"
@@ -644,7 +741,7 @@ async def process_search_queries(response: str, forecaster_id: str, question_det
                 else:
                     formatted_results += f"\n<Summary query=\"{query}\">\nError retrieving results: {str(result)}\n</Summary>\n"
             else:
-                write(f"[process_search_queries] ✅ Forecaster {forecaster_id}: Query '{query}' processed successfully.")
+                write(f"[process_search_queries] [OK] Forecaster {forecaster_id}: Query '{query}' processed successfully.")
                 
                 if source == "Assistant":
                     formatted_results += f"\n<Asknews_articles>\nQuery: {query}\n{result}</Asknews_articles>\n"

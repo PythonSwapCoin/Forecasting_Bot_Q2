@@ -8,7 +8,7 @@ from prompts import (
     BINARY_PROMPT_1,
     BINARY_PROMPT_2,
 )
-from llm_calls import call_claude, call_gpt_o3, call_gpt_o4_mini
+from llm_calls import call_claude, call_gpt_o3, call_gpt_o4_mini, call_claude_with_fallback, call_gpt_o4_mini_with_fallback, call_forecaster_1, call_forecaster_2, call_forecaster_3, call_forecaster_4, call_forecaster_5
 from search import process_search_queries
 
 """
@@ -81,11 +81,11 @@ async def get_binary_forecast(question_details, write=print):
 
     async def run_prompt1():
         return await asyncio.gather(
-            call_claude(prompt1),      # forecaster 1
-            call_claude(prompt1),      # forecaster 2
-            call_gpt_o4_mini(prompt1), # forecaster 3
-            call_gpt_o3(prompt1), # forecaster 4
-            call_gpt_o3(prompt1),      # forecaster 5
+            call_forecaster_1(prompt1),  # forecaster 1 - claude-haiku-4.5
+            call_forecaster_2(prompt1),  # forecaster 2 - gemini-2.5-flash
+            call_forecaster_3(prompt1),  # forecaster 3 - gpt-5-chat
+            call_forecaster_4(prompt1),  # forecaster 4 - o4-mini
+            call_forecaster_5(prompt1),  # forecaster 5 - grok-4-fast
         )
 
     results_prompt1 = await run_prompt1()
@@ -112,11 +112,11 @@ async def get_binary_forecast(question_details, write=print):
 
     async def run_prompt2():
         return await asyncio.gather(
-            call_claude(format_prompt2("1")),
-            call_claude(format_prompt2("2")),
-            call_gpt_o4_mini(format_prompt2("3")),
-            call_gpt_o3(format_prompt2("4")),
-            call_gpt_o3(format_prompt2("5")),
+            call_forecaster_1(format_prompt2("1")),  # forecaster 1 - claude-haiku-4.5
+            call_forecaster_2(format_prompt2("2")),  # forecaster 2 - gemini-2.5-flash
+            call_forecaster_3(format_prompt2("3")),  # forecaster 3 - gpt-5-chat
+            call_forecaster_4(format_prompt2("4")),  # forecaster 4 - o4-mini
+            call_forecaster_5(format_prompt2("5")),  # forecaster 5 - grok-4-fast
         )
 
     results_prompt2 = await run_prompt2()
