@@ -176,7 +176,7 @@
       <div id="root"></div>
     </main>
     <script type="module">
-      import React, { useMemo, useState } from "https://esm.sh/react@18.3.1";
+      import React, { useEffect, useState } from "https://esm.sh/react@18.3.1";
       import { createRoot } from "https://esm.sh/react-dom@18.3.1/client";
       import ReactFlow, {
         Background,
@@ -206,131 +206,259 @@
         fontWeight: 500,
       });
 
-      const initialNodes = [
-        {
-          id: "question-intake",
-          position: { x: -350, y: 0 },
-          data: { label: "Question Intake" },
-          style: nodeStyle("ingest"),
-          type: "default",
-        },
-        {
-          id: "query-generation",
-          position: { x: -120, y: -100 },
-          data: { label: "Query Generation" },
-          style: nodeStyle("analysis"),
-        },
-        {
-          id: "retrieval",
-          position: { x: 150, y: -160 },
-          data: { label: "Evidence Retrieval" },
-          style: nodeStyle("tooling"),
-        },
-        {
-          id: "synthesis",
-          position: { x: 150, y: 0 },
-          data: { label: "Context Synthesis" },
-          style: nodeStyle("analysis"),
-        },
-        {
-          id: "inside-view",
-          position: { x: 450, y: -140 },
-          data: { label: "Inside-View Forecasters" },
-          style: nodeStyle("forecaster"),
-        },
-        {
-          id: "outside-view",
-          position: { x: 450, y: 120 },
-          data: { label: "Outside-View Forecasters" },
-          style: nodeStyle("forecaster"),
-        },
-        {
-          id: "ensemble",
-          position: { x: 700, y: -20 },
-          data: { label: "Ensemble Aggregator" },
-          style: nodeStyle("summary"),
-        },
-        {
-          id: "reporting",
-          position: { x: 960, y: -20 },
-          data: { label: "Reporting & Submission" },
-          style: nodeStyle("summary"),
-        },
-      ];
-
-      const initialEdges = [
-        { id: "e1", source: "question-intake", target: "query-generation" },
-        { id: "e2", source: "question-intake", target: "synthesis" },
-        { id: "e3", source: "query-generation", target: "retrieval" },
-        { id: "e4", source: "retrieval", target: "synthesis" },
-        { id: "e5", source: "synthesis", target: "inside-view" },
-        { id: "e6", source: "synthesis", target: "outside-view" },
-        { id: "e7", source: "inside-view", target: "ensemble" },
-        { id: "e8", source: "outside-view", target: "ensemble" },
-        { id: "e9", source: "ensemble", target: "reporting" },
-      ];
-
-      const knowledgeBase = {
-        "question-intake": {
-          title: "Question Intake",
+      const flows = {
+        customForecast: {
+          label: "custom_forecast.py (CLI run)",
           description:
-            "Pull questions from Metaculus tournaments, parse metadata, and route based on type (binary, multiple-choice, numeric).",
-          tools: ["Metaculus GraphQL API", "Question templating"],
-          outputs: ["Normalized question object", "Initial context memo"],
+            "Visualises the ad-hoc CLI that lets analysts craft a bespoke question, route it through the appropriate forecaster, and persist the commentary to disk.",
+          nodes: [
+            {
+              id: "gather-input",
+              position: { x: -420, y: -40 },
+              data: { label: "Gather user input" },
+              style: nodeStyle("ingest"),
+            },
+            {
+              id: "create-structure",
+              position: { x: -140, y: -40 },
+              data: { label: "Create question structure" },
+              style: nodeStyle("analysis"),
+            },
+            {
+              id: "route-forecaster",
+              position: { x: 120, y: -40 },
+              data: { label: "Route to forecast fn" },
+              style: nodeStyle("analysis"),
+            },
+            {
+              id: "binary-forecaster",
+              position: { x: 360, y: -200 },
+              data: { label: "binary_forecast" },
+              style: nodeStyle("forecaster"),
+            },
+            {
+              id: "numeric-forecaster",
+              position: { x: 360, y: -40 },
+              data: { label: "numeric_forecast" },
+              style: nodeStyle("forecaster"),
+            },
+            {
+              id: "mc-forecaster",
+              position: { x: 360, y: 120 },
+              data: { label: "multiple_choice_forecast" },
+              style: nodeStyle("forecaster"),
+            },
+            {
+              id: "persist-output",
+              position: { x: 620, y: -40 },
+              data: { label: "Persist results" },
+              style: nodeStyle("tooling"),
+            },
+            {
+              id: "surface-results",
+              position: { x: 860, y: -40 },
+              data: { label: "Surface output" },
+              style: nodeStyle("summary"),
+            },
+          ],
+          edges: [
+            { id: "c1", source: "gather-input", target: "create-structure" },
+            { id: "c2", source: "create-structure", target: "route-forecaster" },
+            { id: "c3", source: "route-forecaster", target: "binary-forecaster" },
+            { id: "c4", source: "route-forecaster", target: "numeric-forecaster" },
+            { id: "c5", source: "route-forecaster", target: "mc-forecaster" },
+            { id: "c6", source: "binary-forecaster", target: "persist-output" },
+            { id: "c7", source: "numeric-forecaster", target: "persist-output" },
+            { id: "c8", source: "mc-forecaster", target: "persist-output" },
+            { id: "c9", source: "persist-output", target: "surface-results" },
+          ],
+          knowledge: {
+            "gather-input": {
+              title: "Gather user input",
+              description:
+                "Interactive CLI that collects the title, description, resolution criteria, and type-specific metadata (ranges or options).",
+              tools: ["Python input prompts", "Validation loops"],
+              outputs: ["question_params dict", "Console transcript"],
+            },
+            "create-structure": {
+              title: "Create question structure",
+              description:
+                "`create_question_structure` normalises raw answers into the schema expected by downstream forecasters, enriching numeric and multiple choice payloads with scaling or options.",
+              tools: ["create_question_structure"],
+              outputs: ["question_details payload", "Type metadata"],
+            },
+            "route-forecaster": {
+              title: "Route to forecast function",
+              description:
+                "Dispatch logic in `forecast_custom_question` selects the appropriate coroutine based on the question type and forwards a file-aware writer callback.",
+              tools: ["forecast_custom_question"],
+              outputs: ["Selected coroutine", "Write hook"],
+            },
+            "binary-forecaster": {
+              title: "binary_forecast",
+              description:
+                "Harnesses the binary forecasting stack (committee agents, retrieval, synthesis) to produce probabilities and commentary for yes/no questions.",
+              tools: ["binary_forecast"],
+              outputs: ["Final binary probability", "Narrative commentary"],
+            },
+            "numeric-forecaster": {
+              title: "numeric_forecast",
+              description:
+                "Runs the numeric pipeline, consuming scaling information to estimate distributions and produce percentile guidance.",
+              tools: ["numeric_forecast"],
+              outputs: ["Point & distribution forecast", "Numeric rationale"],
+            },
+            "mc-forecaster": {
+              title: "multiple_choice_forecast",
+              description:
+                "Scores each provided option, blending inside/outside-view reasoning before emitting calibrated probabilities.",
+              tools: ["multiple_choice_forecast"],
+              outputs: ["Option probability map", "Comparative analysis"],
+            },
+            "persist-output": {
+              title: "Persist results",
+              description:
+                "Streams question details, forecasts, and commentary into a timestamped text artefact inside `custom_forecasts/`.",
+              tools: ["write_to_file helper", "Filesystem"],
+              outputs: ["Structured text report", "Write logs"],
+            },
+            "surface-results": {
+              title: "Surface output",
+              description:
+                "Echoes the saved file path and key outputs back to the CLI so an analyst can review or share.",
+              tools: ["Console print"],
+              outputs: ["Terminal summary", "Saved artefact path"],
+            },
+          },
         },
-        "query-generation": {
-          title: "Query Generation Agents",
+        productionWorkflow: {
+          label: "Tournament pipeline (Metaculus)",
           description:
-            "Dual-agent prompt pair generates research queries, balancing recall-focused and precision-focused searches.",
-          tools: ["Claude 3.7 Sonnet", "GPT-o4-mini"],
-          outputs: ["Search directives", "Tool selection hints"],
-        },
-        retrieval: {
-          title: "Evidence Retrieval",
-          description:
-            "Orchestrates AskNews, Exa, and Perplexity fetchers plus in-house scraping to build a research packet.",
-          tools: ["AskNews SDK", "Exa Smart Searcher", "Custom scraper"],
-          outputs: ["Ranked articles", "Snippets with source metadata"],
-        },
-        synthesis: {
-          title: "Context Synthesis",
-          description:
-            "Merges retrieved evidence, deduplicates insights, and curates highlights for downstream forecasters.",
-          tools: ["LLM summarizers", "Relevance scoring"],
-          outputs: ["Unified briefing", "Evidence heatmap"],
-        },
-        "inside-view": {
-          title: "Inside-View Forecasters",
-          description:
-            "Mechanistic analysts focus on causal chains, timelines, and scenario stress tests for each outcome.",
-          tools: ["GPT-o4-mini", "Scenario planner prompts"],
-          outputs: ["Probability estimates", "Rationale excerpts"],
-        },
-        "outside-view": {
-          title: "Outside-View Forecasters",
-          description:
-            "Reference-class agents blend historical baselines, trend extrapolation, and statistical heuristics.",
-          tools: ["Claude 3.7 Sonnet", "Historical benchmark library"],
-          outputs: ["Probability estimates", "Reference-class justification"],
-        },
-        ensemble: {
-          title: "Ensemble Aggregator",
-          description:
-            "Applies reliability weights, calibration adjustments, and sanity checks across the committee outputs.",
-          tools: ["Reliability weighting", "Calibration curves"],
-          outputs: ["Final probability", "Confidence report"],
-        },
-        reporting: {
-          title: "Reporting & Submission",
-          description:
-            "Posts forecasts, comments, and scratchpad artefacts back to Metaculus or experiment sandboxes.",
-          tools: ["Metaculus API", "Auto-commentary generator"],
-          outputs: ["Metaculus submission", "Public summary"],
+            "Shows the always-on tournament pipeline that harvests questions, performs research, and aggregates committee forecasts.",
+          nodes: [
+            {
+              id: "question-intake",
+              position: { x: -350, y: 0 },
+              data: { label: "Question intake" },
+              style: nodeStyle("ingest"),
+            },
+            {
+              id: "query-generation",
+              position: { x: -120, y: -100 },
+              data: { label: "Query generation" },
+              style: nodeStyle("analysis"),
+            },
+            {
+              id: "retrieval",
+              position: { x: 150, y: -160 },
+              data: { label: "Evidence retrieval" },
+              style: nodeStyle("tooling"),
+            },
+            {
+              id: "synthesis",
+              position: { x: 150, y: 0 },
+              data: { label: "Context synthesis" },
+              style: nodeStyle("analysis"),
+            },
+            {
+              id: "inside-view",
+              position: { x: 450, y: -140 },
+              data: { label: "Inside-view forecasters" },
+              style: nodeStyle("forecaster"),
+            },
+            {
+              id: "outside-view",
+              position: { x: 450, y: 120 },
+              data: { label: "Outside-view forecasters" },
+              style: nodeStyle("forecaster"),
+            },
+            {
+              id: "ensemble",
+              position: { x: 700, y: -20 },
+              data: { label: "Ensemble aggregator" },
+              style: nodeStyle("summary"),
+            },
+            {
+              id: "reporting",
+              position: { x: 960, y: -20 },
+              data: { label: "Reporting & submission" },
+              style: nodeStyle("summary"),
+            },
+          ],
+          edges: [
+            { id: "e1", source: "question-intake", target: "query-generation" },
+            { id: "e2", source: "question-intake", target: "synthesis" },
+            { id: "e3", source: "query-generation", target: "retrieval" },
+            { id: "e4", source: "retrieval", target: "synthesis" },
+            { id: "e5", source: "synthesis", target: "inside-view" },
+            { id: "e6", source: "synthesis", target: "outside-view" },
+            { id: "e7", source: "inside-view", target: "ensemble" },
+            { id: "e8", source: "outside-view", target: "ensemble" },
+            { id: "e9", source: "ensemble", target: "reporting" },
+          ],
+          knowledge: {
+            "question-intake": {
+              title: "Question intake",
+              description:
+                "Pulls tournament questions, normalises metadata, and routes based on type.",
+              tools: ["Metaculus GraphQL API", "Question templating"],
+              outputs: ["Normalised question object", "Initial context memo"],
+            },
+            "query-generation": {
+              title: "Query generation agents",
+              description:
+                "Dual-agent prompt pair generates research queries with complementary recall/precision focus.",
+              tools: ["Claude 3.7 Sonnet", "GPT-o4-mini"],
+              outputs: ["Search directives", "Tool selection hints"],
+            },
+            retrieval: {
+              title: "Evidence retrieval",
+              description:
+                "Orchestrates AskNews, Exa, and Perplexity fetchers plus in-house scraping to build a research packet.",
+              tools: ["AskNews SDK", "Exa Smart Searcher", "Custom scraper"],
+              outputs: ["Ranked articles", "Snippets with source metadata"],
+            },
+            synthesis: {
+              title: "Context synthesis",
+              description:
+                "Merges retrieved evidence, deduplicates insights, and curates highlights for downstream forecasters.",
+              tools: ["LLM summarisers", "Relevance scoring"],
+              outputs: ["Unified briefing", "Evidence heatmap"],
+            },
+            "inside-view": {
+              title: "Inside-view forecasters",
+              description:
+                "Mechanistic analysts focus on causal chains, timelines, and scenario stress tests for each outcome.",
+              tools: ["GPT-o4-mini", "Scenario planner prompts"],
+              outputs: ["Probability estimates", "Rationale excerpts"],
+            },
+            "outside-view": {
+              title: "Outside-view forecasters",
+              description:
+                "Reference-class agents blend historical baselines, trend extrapolation, and statistical heuristics.",
+              tools: ["Claude 3.7 Sonnet", "Historical benchmark library"],
+              outputs: ["Probability estimates", "Reference-class justification"],
+            },
+            ensemble: {
+              title: "Ensemble aggregator",
+              description:
+                "Applies reliability weights, calibration adjustments, and sanity checks across the committee outputs.",
+              tools: ["Reliability weighting", "Calibration curves"],
+              outputs: ["Final probability", "Confidence report"],
+            },
+            reporting: {
+              title: "Reporting & submission",
+              description:
+                "Posts forecasts, comments, and scratchpad artefacts back to Metaculus or experiment sandboxes.",
+              tools: ["Metaculus API", "Auto-commentary generator"],
+              outputs: ["Metaculus submission", "Public summary"],
+            },
+          },
         },
       };
 
-      const SummaryPanel = ({ node }) => {
-        const info = knowledgeBase[node?.id];
+      const SummaryPanel = ({ node, flowId }) => {
+        const info = flows[flowId]?.knowledge?.[node?.id];
         if (!info) {
           return (
             <div className="card">
@@ -391,9 +519,17 @@
       );
 
       const Layout = () => {
-        const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-        const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-        const [selectedNode, setSelectedNode] = useState(initialNodes[0]);
+        const [flowId, setFlowId] = useState("customForecast");
+        const [nodes, setNodes, onNodesChange] = useNodesState(flows["customForecast"].nodes);
+        const [edges, setEdges, onEdgesChange] = useEdgesState(flows["customForecast"].edges);
+        const [selectedNode, setSelectedNode] = useState(flows["customForecast"].nodes[0]);
+
+        useEffect(() => {
+          const flow = flows[flowId];
+          setNodes(flow.nodes.map((node) => ({ ...node })));
+          setEdges(flow.edges.map((edge) => ({ ...edge })));
+          setSelectedNode(flow.nodes[0]);
+        }, [flowId, setNodes, setEdges]);
 
         const onNodeClick = (_, node) => {
           setSelectedNode(node);
@@ -411,14 +547,49 @@
           setSelectedNode(newNode);
         };
 
-        const contextValue = useMemo(
-          () => ({ nodes, setNodes, edges, setEdges }),
-          [nodes, edges]
-        );
-
         return (
           <div style={{ display: "contents" }}>
             <div className="flow-container">
+              <div
+                style={{
+                  position: "absolute",
+                  top: 16,
+                  left: 16,
+                  zIndex: 10,
+                  display: "flex",
+                  gap: "0.5rem",
+                  alignItems: "center",
+                  background: "rgba(15,23,42,0.85)",
+                  border: "1px solid rgba(148, 163, 184, 0.28)",
+                  borderRadius: 999,
+                  padding: "0.35rem 0.75rem",
+                  boxShadow: "0 12px 24px rgba(15, 23, 42, 0.4)",
+                }}
+              >
+                <span style={{ fontSize: "0.75rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(191,219,254,0.85)" }}>
+                  Flow
+                </span>
+                <select
+                  value={flowId}
+                  onChange={(event) => setFlowId(event.target.value)}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: "#e2e8f0",
+                    fontSize: "0.85rem",
+                    fontWeight: 500,
+                    outline: "none",
+                    padding: "0.25rem 0.1rem",
+                    appearance: "none",
+                  }}
+                >
+                  {Object.entries(flows).map(([id, flow]) => (
+                    <option key={id} value={id} style={{ color: "#0f172a" }}>
+                      {flow.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <ReactFlow
                 nodes={nodes}
                 edges={edges}
@@ -435,7 +606,11 @@
               </ReactFlow>
             </div>
             <aside className="sidebar">
-              <SummaryPanel node={selectedNode} />
+              <div className="card">
+                <h3>{flows[flowId].label}</h3>
+                <p>{flows[flowId].description}</p>
+              </div>
+              <SummaryPanel node={selectedNode} flowId={flowId} />
               <Roadmap />
               <button className="primary" onClick={addPlaceholderNode}>
                 Add placeholder step
