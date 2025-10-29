@@ -126,10 +126,25 @@ python benchmark.py
 python forecaster.py --question_id 12345
 ```
 
+## Process Visualization UI
+
+To explore the multi-agent workflow visually, open the lightweight ReactFlow dashboard located at [`ui/index.html`](./ui/index.html).
+It now boots straight into the `custom_forecast.py` CLI pipeline so you can inspect how a bespoke question moves through the helpers inside [`Bot/custom_forecast.py`](./Bot/custom_forecast.py) before reaching the tournament forecasters. Use the flow selector in the top-left badge to flip between the ad-hoc custom flow and the autonomous Metaculus tournament pipeline.
+
+```bash
+# from the repository root
+cd ui
+python -m http.server 8000
+# then navigate to http://localhost:8000 in your browser and open index.html
+```
+
+The sidebar describes what each agent or helper is responsible for, highlights the tools they can call, and lists the outputs they provide to the ensemble or CLI user.
+Use the “Add placeholder step” button to sketch experimental stages—the underlying state management is ready for future drag-and-drop editing and persistence hooks.
+
 ## Future Actionables
 
 - Integration of structured numerical data sources (e.g., economic indicators, polls)
-- UI for forecast exploration and explanation
+- Expand the process designer with drag-and-drop editing and workflow export
 - Customizable forecasting strategies based on question domain
 - Fine-tuning of smaller LLMs on curated forecasting dataset
 
