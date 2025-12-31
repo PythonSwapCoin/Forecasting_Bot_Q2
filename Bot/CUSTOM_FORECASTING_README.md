@@ -1,188 +1,106 @@
 # Custom Question Forecasting
 
-This directory contains tools for forecasting on custom questions that are not from Metaculus. You can create your own forecasting questions and get AI-powered forecasts using the same sophisticated forecasting system.
+Interactively forecast non-Metaculus questions using the same multi-stage pipeline as the tournament bot. Prompts, research, and forecaster orchestration are shared with the main system via `prompts.py`.
 
-## Files
+## What it does
+- Builds a structured question (title, description, resolution, fine print, type).
+- Runs historical + current research from `search.py`:
+  - Primary LLM research via OpenRouter (Perplexity Sonar Deep Research).
+  - Serper (Google/News) optional; URL attempt/success counts are tracked.
+  - AskNews/Exa are optional; if no credentials are set they’re skipped cleanly.
+- Executes two-phase prompting (outside view → inside view) per question type.
+- Aggregates 5 forecaster models (configurable in `model_config.py`) with **equal weights** and writes results to `custom_forecasts/`.
 
-- `custom_forecast.py` - Interactive script for creating and forecasting custom questions
-- `example_custom_forecast.py` - Example script showing how to forecast programmatically
-- `CUSTOM_FORECASTING_README.md` - This documentation file
+## How it works (phases)
+1. **User input** (`Bot/custom_forecast.py`): choose type (binary/numeric/multiple_choice) and provide details.
+2. **Question struct**: normalized dict for downstream modules.
+3. **Dual research** (`search.py`):
+   - Historical prompt → queries → LLM research (Perplexity via OpenRouter) ± Serper summaries.
+   - Current prompt → queries → LLM research (Perplexity via OpenRouter) ± Serper summaries.
+4. **Phase 1 (outside view)**:
+   - Binary: `BINARY_PROMPT_1`
+   - Numeric: `NUMERIC_PROMPT_1`
+   - MCQ: `MULTIPLE_CHOICE_PROMPT_1`
+5. **Phase 2 (inside view)**:
+   - Binary: `BINARY_PROMPT_2`
+   - Numeric: `NUMERIC_PROMPT_2`
+   - MCQ: `MULTIPLE_CHOICE_PROMPT_2`
+6. **Ensemble** (`llm_calls.py`, `model_config.py`): 5 forecasters with equal-weight averaging by default.
+7. **Output**: write forecast + rationale to `../custom_forecasts/<title>.txt`.
 
-## Quick Start
-
-### Option 1: Interactive Forecasting
-
-Run the interactive script to create and forecast your own questions:
-
+## Quick start (interactive)
 ```bash
 cd Bot
 python custom_forecast.py
 ```
+Follow the prompts for type/title/description/resolution/fine print and any type-specific fields.
 
-The script will prompt you for:
-1. **Question type**: binary, numeric, or multiple_choice
-2. **Question title**: A clear, specific question
-3. **Description**: Background information and context
-4. **Resolution criteria**: How the question will be resolved
-5. **Type-specific details**: Additional parameters based on question type
-
-### Option 2: Programmatic Forecasting
-
-Use the example script as a template for creating your own forecasting code:
-
+## Polymarket benchmark (5 binary markets)
+Run the built-in benchmark to score the binary pipeline against five frozen Polymarket probabilities:
 ```bash
 cd Bot
-python example_custom_forecast.py
+python custom_forecast.py --benchmark
 ```
+Edit `Bot/polymarket_benchmark.py` to update the five markets. Each entry supports:
+- `title` (str)
+- `description` (str)
+- `resolution_criteria` (str)
+- `market_probability` (float 0-1 from Polymarket)
+- optional `fine_print` / `context`
 
-## Question Types
+The run writes `custom_forecasts/polymarket_benchmark_<timestamp>.txt` with Brier and MAE per question.
+Benchmarks also emit:
+- `errors.txt`: contamination/errors per question.
+- `run.log`: full buffered logs.
+- Serper stats (attempted vs succeeded URLs) and search counts in summary.
 
-### Binary Questions
-- **Format**: Yes/No questions
-- **Example**: "Will Bitcoin exceed $100,000 by end of 2025?"
-- **Output**: Single probability (0-1)
-
-### Numeric Questions
-- **Format**: Questions asking for a specific number
-- **Example**: "What will be the US unemployment rate in Q2 2025?"
-- **Additional parameters**:
-  - `range_min`: Minimum possible value
-  - `range_max`: Maximum possible value
-  - `open_lower_bound`: Whether lower bound is open
-  - `open_upper_bound`: Whether upper bound is open
-  - `zero_point`: Reference point for scaling (optional)
-  - `unit`: Unit of measurement (optional)
-- **Output**: Continuous CDF (201 points)
-
-### Multiple Choice Questions
-- **Format**: Questions with predefined options
-- **Example**: "Which company will have the highest market cap on Dec 31, 2025?"
-- **Additional parameters**:
-  - `options`: List of possible answers
-- **Output**: Probability distribution over options
-
-## Example Usage
-
-### Creating a Binary Question
-
+## Programmatic use
+Use `forecaster.py` helpers directly:
 ```python
 import asyncio
 from forecaster import binary_forecast
 
-# Define your question
-question_details = {
-    "title": "Will AI achieve AGI by 2030?",
-    "description": "This question asks whether artificial general intelligence will be achieved by January 1, 2030.",
-    "resolution_criteria": "AGI is achieved when an AI system can perform any intellectual task that a human can do, as determined by a panel of AI experts.",
-    "fine_print": "Resolution will be based on consensus from leading AI research institutions.",
-    "type": "binary"
+question = {
+    "title": "Will XYZ IPO in 2025?",
+    "description": "...",
+    "resolution_criteria": "...",
+    "fine_print": "",
+    "type": "binary",
 }
 
-# Run the forecast
 async def main():
-    forecast, comment = await binary_forecast(question_details)
-    print(f"Forecast: {forecast}")
-    print(f"Comment: {comment}")
+    forecast, comment = await binary_forecast(question)
+    print(forecast, comment[:500])
 
 asyncio.run(main())
 ```
 
-### Creating a Numeric Question
+## Dependencies
+- Python 3.9+
+- `.env` in `Bot/` with:
+  - `OPENROUTER_API_KEY`
+  - `SERPER_KEY` (Google/News search, optional)
+  - `PERPLEXITY_API_KEY` not required if using OpenRouter
+  - `ASKNEWS_CLIENT_ID`, `ASKNEWS_SECRET` optional (skipped if missing)
+  - `EXA_API_KEY` optional (skipped if missing)
 
-```python
-import asyncio
-from forecaster import numeric_forecast
-
-# Define your question
-question_details = {
-    "title": "What will be the global average temperature in 2025?",
-    "description": "This question asks for the global average surface temperature for the year 2025.",
-    "resolution_criteria": "Temperature will be measured as the global average surface temperature anomaly relative to 1951-1980 baseline, as reported by NASA GISTEMP.",
-    "fine_print": "Data source: NASA Goddard Institute for Space Studies Surface Temperature Analysis.",
-    "type": "numeric",
-    "scaling": {
-        "range_min": 0.5,
-        "range_max": 1.5,
-        "zero_point": None
-    },
-    "open_upper_bound": False,
-    "open_lower_bound": False,
-    "unit": "°C above 1951-1980 baseline"
-}
-
-# Run the forecast
-async def main():
-    forecast, comment = await numeric_forecast(question_details)
-    print(f"Forecast: {forecast}")
-    print(f"Comment: {comment}")
-
-asyncio.run(main())
+Install packages:
+```bash
+pip install -r ../requirements.txt
 ```
 
-### Creating a Multiple Choice Question
+## Tips for good questions
+- Clear resolution criteria and timeframe.
+- Provide background/fine print for context.
+- For numeric: sensible bounds and units; optional zero point.
+- For MCQ: >=2 options, mutually exclusive.
 
-```python
-import asyncio
-from forecaster import multiple_choice_forecast
-
-# Define your question
-question_details = {
-    "title": "What will be the primary energy source for electricity generation in 2030?",
-    "description": "This question asks about the dominant energy source for global electricity generation in 2030.",
-    "resolution_criteria": "Resolution based on the energy source with the highest share of global electricity generation in 2030, as reported by the International Energy Agency.",
-    "fine_print": "Data source: IEA World Energy Outlook 2030.",
-    "type": "multiple_choice",
-    "options": [
-        "Coal",
-        "Natural Gas",
-        "Nuclear",
-        "Solar",
-        "Wind",
-        "Hydroelectric",
-        "Other Renewables"
-    ]
-}
-
-# Run the forecast
-async def main():
-    forecast, comment = await multiple_choice_forecast(question_details)
-    print(f"Forecast: {forecast}")
-    print(f"Comment: {comment}")
-
-asyncio.run(main())
-```
-
-## Output
-
-Forecasts are saved to files in the following directories:
-- Custom forecasts: `../custom_forecasts/`
-- Example forecasts: `../example_forecasts/`
-
-Each forecast file contains:
-- Question details
-- Research and reasoning from multiple AI forecasters
-- Final forecast result
-- Detailed commentary
-
-## Requirements
-
-Make sure you have the required environment variables set up in your `.env` file:
-- `METACULUS_TOKEN`
-- `PERPLEXITY_API_KEY` (for research)
-- `ASKNEWS_CLIENT_ID` and `ASKNEWS_SECRET` (for news research)
-- `OPENAI_API_KEY` (for AI models)
-
-## Tips for Good Questions
-
-1. **Be specific**: Avoid vague or ambiguous wording
-2. **Clear resolution**: Define exactly how the question will be resolved
-3. **Reasonable timeframe**: Choose timeframes that are neither too short nor too long
-4. **Measurable outcomes**: Ensure the outcome can be objectively determined
-5. **Good background**: Provide sufficient context for the AI to understand the question
+## Changing prompts and models quickly
+- Prompts live in `Bot/prompts.py`. The shared system context is `FORECASTER_SYSTEM_CONTEXT` (aliased as `claude_context`/`gpt_context` for backward compatibility). Edit that string to adjust the forecaster persona once.
+- Model choices live in `Bot/model_config.py` (defaults) and can be overridden via env vars `FORECASTER_1_MODEL` … `FORECASTER_5_MODEL`, or run `python configure_models.py` for a guided selector.
+- Binary forecaster weights are set in `binary.py` (equal by default); adjust the `weights` list there if you need custom weighting.
 
 ## Troubleshooting
-
-- **Import errors**: Make sure you're running the script from the `Bot` directory
-- **API errors**: Check that your environment variables are set correctly
-- **Forecast errors**: Ensure your question details are complete and properly formatted
-- **File permissions**: Make sure you have write permissions for the output directories
+- **Missing keys**: verify `.env` under `Bot/`.
+- **Empty research**: ensure `OPENROUTER_API_KEY` is set; set `SERPER_KEY` if you want Google/News fallback.
+- **Write issues**: ensure `custom_forecasts/` is writable.

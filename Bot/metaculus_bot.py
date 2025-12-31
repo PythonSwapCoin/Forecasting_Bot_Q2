@@ -6,11 +6,18 @@ import re
 import dotenv
 dotenv.load_dotenv()
 
-from openai import AsyncOpenAI
 import numpy as np
 import requests
 import forecasting_tools
 from asknews_sdk import AskNewsSDK
+from prompts import (
+    BINARY_PROMPT_TEMPLATE,
+    MULTIPLE_CHOICE_PROMPT_TEMPLATE,
+    NUMERIC_PROMPT_TEMPLATE,
+    RESEARCH_ASSISTANT_PROMPT_WITH_QUESTION,
+    RESEARCH_ASSISTANT_SYSTEM_PROMPT,
+)
+from llm_calls import call_openrouter_gpt
 
 
 ######################### CONSTANTS #########################
@@ -27,7 +34,6 @@ PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
 ASKNEWS_CLIENT_ID = os.getenv("ASKNEWS_CLIENT_ID")
 ASKNEWS_SECRET = os.getenv("ASKNEWS_SECRET")
 EXA_API_KEY = os.getenv("EXA_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") # You'll also need the OpenAI API Key if you want to use the Exa Smart Searcher
 
 # The tournament IDs below can be used for testing your bot.
 Q4_2024_AI_BENCHMARKING_ID = 32506
@@ -200,34 +206,12 @@ CONCURRENT_REQUESTS_LIMIT = 5
 llm_rate_limiter = asyncio.Semaphore(CONCURRENT_REQUESTS_LIMIT)
 
 
-async def call_llm(prompt: str, model: str = "o1", temperature: float = 0.3) -> str:
+async def call_llm(prompt: str, model: str = "openai/o4-mini", temperature: float = 0.3) -> str:
     """
-    Makes a streaming completion request to OpenAI's API with concurrent request limiting.
+    Makes a completion request via OpenRouter with concurrent request limiting.
     """
-
-    # Remove the base_url parameter to call the OpenAI API directly
-    # Also checkout the package 'litellm' for one function that can call any model from any provider
-    # Email ben@metaculus.com if you need credit for the Metaculus OpenAI/Anthropic proxy
-    client = AsyncOpenAI(
-        base_url="https://llm-proxy.metaculus.com/proxy/openai/v1",
-        default_headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Token {METACULUS_TOKEN}",
-        },
-        api_key="Fake API Key since openai requires this not to be NONE. This isn't used",
-        max_retries=2,
-    )
-
     async with llm_rate_limiter:
-        response = await client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            stream=False,
-        )
-        answer = response.choices[0].message.content
-        if answer is None:
-            raise ValueError("No answer returned from LLM")
-        return answer
+        return await call_openrouter_gpt(prompt, model=model)
 
 
 def run_research(question: str) -> str:
@@ -246,65 +230,28 @@ def run_research(question: str) -> str:
     return research
 
 def call_perplexity(question: str) -> str:
-    url = "https://api.perplexity.ai/chat/completions"
-    api_key = PERPLEXITY_API_KEY
-    headers = {
-        "accept": "application/json",
-        "authorization": f"Bearer {api_key}",
-        "content-type": "application/json",
-    }
-    payload = {
-        "model": "llama-3.1-sonar-huge-128k-online",
-        "messages": [
-            {
-                "role": "system",  # this is a system prompt designed to guide the perplexity assistant
-                "content": """
-                You are an assistant to a superforecaster.
-                The superforecaster will give you a question they intend to forecast on.
-                To be a great assistant, you generate a concise but detailed rundown of the most relevant news, including if the question would resolve Yes or No based on current information.
-                You do not produce forecasts yourself.
-                """,
-            },
-            {
-                "role": "user",  # this is the actual prompt we ask the perplexity assistant to answer
-                "content": question,
-            },
-        ],
-    }
-    response = requests.post(url=url, json=payload, headers=headers)
-    if not response.ok:
-        raise Exception(response.text)
-    content = response.json()["choices"][0]["message"]["content"]
-    return content
+    """
+    Call Perplexity via OpenRouter using the Sonar chat model.
+    """
+    return asyncio.run(
+        call_openrouter_gpt(
+            question,
+            model="perplexity/sonar",
+            max_tokens=8000,
+        )
+    )
 
 def call_exa_smart_searcher(question: str) -> str:
-    if OPENAI_API_KEY is None:
-        searcher = forecasting_tools.ExaSearcher(
-            include_highlights=True,
-            num_results=10,
-        )
-        highlights = asyncio.run(searcher.invoke_for_highlights_in_relevance_order(question))
-        prioritized_highlights = highlights[:10]
-        combined_highlights = ""
-        for i, highlight in enumerate(prioritized_highlights):
-            combined_highlights += f'[Highlight {i+1}]:\nTitle: {highlight.source.title}\nURL: {highlight.source.url}\nText: "{highlight.highlight_text}"\n\n'
-        response = combined_highlights
-    else:
-        searcher = forecasting_tools.SmartSearcher(
-            temperature=0,
-            num_searches_to_run=2,
-            num_sites_per_search=10,
-        )
-        prompt = (
-            "You are an assistant to a superforecaster. The superforecaster will give"
-            "you a question they intend to forecast on. To be a great assistant, you generate"
-            "a concise but detailed rundown of the most relevant news, including if the question"
-            "would resolve Yes or No based on current information. You do not produce forecasts yourself."
-            f"\n\nThe question is: {question}"
-        )
-        response = asyncio.run(searcher.invoke(prompt))
-
-    return response
+    searcher = forecasting_tools.ExaSearcher(
+        include_highlights=True,
+        num_results=10,
+    )
+    highlights = asyncio.run(searcher.invoke_for_highlights_in_relevance_order(question))
+    prioritized_highlights = highlights[:10]
+    combined_highlights = ""
+    for i, highlight in enumerate(prioritized_highlights):
+        combined_highlights += f'[Highlight {i+1}]:\nTitle: {highlight.source.title}\nURL: {highlight.source.url}\nText: "{highlight.highlight_text}"\n\n'
+    return combined_highlights
 
 def call_asknews(question: str) -> str:
     """
@@ -363,38 +310,6 @@ def call_asknews(question: str) -> str:
 # @title Binary prompt & functions
 
 # This section includes functionality for binary questions.
-
-BINARY_PROMPT_TEMPLATE = """
-You are a professional forecaster interviewing for a job.
-
-Your interview question is:
-{title}
-
-Question background:
-{background}
-
-
-This question's outcome will be determined by the specific criteria below. These criteria have not yet been satisfied:
-{resolution_criteria}
-
-{fine_print}
-
-
-Your research assistant says:
-{summary_report}
-
-Today is {today}.
-
-Before answering you write:
-(a) The time left until the outcome to the question is known.
-(b) The status quo outcome if nothing changed.
-(c) A brief description of a scenario that results in a No outcome.
-(d) A brief description of a scenario that results in a Yes outcome.
-
-You write your rationale remembering that good forecasters put extra weight on the status quo outcome since the world changes slowly most of the time.
-
-The last thing you write is your final answer as: "Probability: ZZ%", 0-100
-"""
 
 
 def extract_probability_from_response_as_percentage_not_decimal(
@@ -457,60 +372,6 @@ async def get_binary_gpt_prediction(
         final_comment_sections
     )
     return median_probability, final_comment
-
-
-####################### NUMERIC ###############
-# @title Numeric prompt & functions
-
-NUMERIC_PROMPT_TEMPLATE = """
-You are a professional forecaster interviewing for a job.
-
-Your interview question is:
-{title}
-
-Background:
-{background}
-
-{resolution_criteria}
-
-{fine_print}
-
-Units for answer: {units}
-
-Your research assistant says:
-{summary_report}
-
-Today is {today}.
-
-{lower_bound_message}
-{upper_bound_message}
-
-
-Formatting Instructions:
-- Please notice the units requested (e.g. whether you represent a number as 1,000,000 or 1m).
-- Never use scientific notation.
-- Always start with a smaller number (more negative if negative) and then increase from there
-
-Before answering you write:
-(a) The time left until the outcome to the question is known.
-(b) The outcome if nothing changed.
-(c) The outcome if the current trend continued.
-(d) The expectations of experts and markets.
-(e) A brief description of an unexpected scenario that results in a low outcome.
-(f) A brief description of an unexpected scenario that results in a high outcome.
-
-You remind yourself that good forecasters are humble and set wide 90/10 confidence intervals to account for unknown unkowns.
-
-The last thing you write is your final answer as:
-"
-Percentile 10: XX
-Percentile 20: XX
-Percentile 40: XX
-Percentile 60: XX
-Percentile 80: XX
-Percentile 90: XX
-"
-"""
 
 
 def extract_percentiles_from_response(forecast_text: str) -> dict:
@@ -748,43 +609,6 @@ async def get_numeric_gpt_prediction(
 
 ########################## MULTIPLE CHOICE ###############
 # @title Multiple Choice prompt & functions
-
-MULTIPLE_CHOICE_PROMPT_TEMPLATE = """
-You are a professional forecaster interviewing for a job.
-
-Your interview question is:
-{title}
-
-The options are: {options}
-
-
-Background:
-{background}
-
-{resolution_criteria}
-
-{fine_print}
-
-
-Your research assistant says:
-{summary_report}
-
-Today is {today}.
-
-Before answering you write:
-(a) The time left until the outcome to the question is known.
-(b) The status quo outcome if nothing changed.
-(c) A description of an scenario that results in an unexpected outcome.
-
-You write your rationale remembering that (1) good forecasters put extra weight on the status quo outcome since the world changes slowly most of the time, and (2) good forecasters leave some moderate probability on most options to account for unexpected outcomes.
-
-The last thing you write is your final probabilities for the N options in this order {options} as:
-Option_A: Probability_A
-Option_B: Probability_B
-...
-Option_N: Probability_N
-"""
-
 
 def extract_option_probabilities_from_response(forecast_text: str, options) -> float:
 

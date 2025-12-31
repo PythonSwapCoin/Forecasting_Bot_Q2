@@ -1,0 +1,21 @@
+question_idx,question,forecaster,model,probability,weight,status,contamination
+1,Will Jose Antonio Kast win the 2025 Chilean presidential election?,1,anthropic/claude-haiku-4.5,0.37,1,ok,False
+1,Will Jose Antonio Kast win the 2025 Chilean presidential election?,2,google/gemini-2.5-flash,0.28,1,ok,False
+1,Will Jose Antonio Kast win the 2025 Chilean presidential election?,3,openai/gpt-5-mini,0.3,1,ok,False
+1,Will Jose Antonio Kast win the 2025 Chilean presidential election?,4,openai/o4-mini,0.15,2,ok,False
+1,Will Jose Antonio Kast win the 2025 Chilean presidential election?,5,x-ai/grok-4-fast,0.45,2,ok,False
+2,"Will NVIDIA be the world's largest company by market cap on December 31, 2025?",1,anthropic/claude-haiku-4.5,0.5,1,ok,False
+2,"Will NVIDIA be the world's largest company by market cap on December 31, 2025?",2,google/gemini-2.5-flash,0.25,1,ok,False
+2,"Will NVIDIA be the world's largest company by market cap on December 31, 2025?",3,openai/gpt-5-mini,0.06,1,ok,False
+2,"Will NVIDIA be the world's largest company by market cap on December 31, 2025?",4,openai/o4-mini,0.12,2,ok,False
+2,"Will NVIDIA be the world's largest company by market cap on December 31, 2025?",5,x-ai/grok-4-fast,0.03,2,ok,False
+3,Will the Federal Reserve cut the target federal funds upper bound by 25 bps at the December 2025 meeting?,1,anthropic/claude-haiku-4.5,0.26,1,ok,False
+3,Will the Federal Reserve cut the target federal funds upper bound by 25 bps at the December 2025 meeting?,2,google/gemini-2.5-flash,0.35,1,ok,False
+3,Will the Federal Reserve cut the target federal funds upper bound by 25 bps at the December 2025 meeting?,3,openai/gpt-5-mini,0.25,1,ok,False
+3,Will the Federal Reserve cut the target federal funds upper bound by 25 bps at the December 2025 meeting?,4,openai/o4-mini,0.07,2,ok,False
+3,Will the Federal Reserve cut the target federal funds upper bound by 25 bps at the December 2025 meeting?,5,x-ai/grok-4-fast,0.2,2,ok,False
+4,Will TIME's 2025 Person of the Year be Artificial Intelligence?,1,anthropic/claude-haiku-4.5,0.01,1,ok,False
+4,Will TIME's 2025 Person of the Year be Artificial Intelligence?,2,google/gemini-2.5-flash,0.13,1,ok,False
+4,Will TIME's 2025 Person of the Year be Artificial Intelligence?,3,openai/gpt-5-mini,0.3,1,ok,False
+4,Will TIME's 2025 Person of the Year be Artificial Intelligence?,4,openai/o4-mini,0.07,2,ok,False
+4,Will TIME's 2025 Person of the Year be Artificial Intelligence?,5,x-ai/grok-4-fast,0.03,2,ok,False

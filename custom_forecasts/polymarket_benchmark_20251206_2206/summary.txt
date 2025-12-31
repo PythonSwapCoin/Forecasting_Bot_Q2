@@ -1,0 +1,44 @@
+======================================================================
+POLYMARKET BENCHMARK
+Created: 20251206_2206
+Questions: 4
+Model config (forecasters 1-5):
+  Forecaster 1: anthropic/claude-haiku-4.5
+  Forecaster 2: google/gemini-2.5-flash
+  Forecaster 3: openai/gpt-5-mini
+  Forecaster 4: openai/o4-mini
+  Forecaster 5: x-ai/grok-4-fast
+======================================================================
+
+SCOREBOARD
+- Will Jose Antonio Kast win the 2025 Chilean presidential election? | forecast=0.570 | market=0.970 | Brier=0.1600 | MAE=0.4000 | status=error | f1=0.71 f2=0.8 f3=0.78 f4=0.4 f5=0.45
+- Will NVIDIA be the world's largest company by market cap on December 31, 2025? | forecast=0.854 | market=0.880 | Brier=0.0007 | MAE=0.0257 | status=ok | f1=0.85 f2=0.75 f3=0.92 f4=0.88 f5=0.85
+- Will the Federal Reserve cut the target federal funds upper bound by 25 bps at the December 2025 meeting? | forecast=0.350 | market=0.940 | Brier=0.3481 | MAE=0.5900 | status=ok | f1=0.19 f2=0.15 f3=0.35 f4=0.6 f5=0.28
+- Will TIME's 2025 Person of the Year be Artificial Intelligence? | forecast=0.215 | market=0.420 | Brier=0.0420 | MAE=0.2050 | status=error | f1=N/A f2=0.36 f3=0.45 f4=0.18 f5=0.06
+
+Average Brier: 0.1377
+Average MAE: 0.3052
+
+Search counts:
+- serper: 432
+- asknews: 2
+
+Forecaster query counts:
+- Forecaster 1: 0
+- Forecaster 2: 0
+- Forecaster 3: 0
+- Forecaster 4: 0
+- Forecaster 5: 0
+
+Per-forecaster averages:
+- Forecaster 1 [anthropic/claude-haiku-4.5]: Brier=0.2103 MAE=0.3467 (n=3)
+- Forecaster 2 [google/gemini-2.5-flash]: Brier=0.1684 MAE=0.2875 (n=4)
+- Forecaster 3 [openai/gpt-5-mini]: Brier=0.0967 MAE=0.2125 (n=4)
+- Forecaster 4 [openai/o4-mini]: Brier=0.1245 MAE=0.2875 (n=4)
+- Forecaster 5 [x-ai/grok-4-fast]: Brier=0.2091 MAE=0.3925 (n=4)
+
+Files:
+- summary.json: machine-readable scores
+- questions/: per-question details & raw outputs
+- scores_by_forecaster.csv: per-forecaster probabilities
+- errors.txt: any issues or contamination flags

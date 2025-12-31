@@ -9,7 +9,9 @@ from prompts import (
     BINARY_PROMPT_2,
 )
 from llm_calls import call_claude, call_gpt_o3, call_gpt_o4_mini, call_claude_with_fallback, call_gpt_o4_mini_with_fallback, call_forecaster_1, call_forecaster_2, call_forecaster_3, call_forecaster_4, call_forecaster_5
-from search import process_search_queries
+from search import process_search_queries, reset_perplexity_budget
+from logging_utils import get_current_logger
+from research_config import ENABLE_ASKNEWS, ENABLE_BRIGHT_DATA, ENABLE_PERPLEXITY, ENABLE_SERPER, prefer_perplexity
 
 """
 Program flow:
@@ -38,12 +40,23 @@ def extract_probability_from_response_as_percentage_not_decimal(forecast_text: s
     raise ValueError(f"Could not extract prediction from response: {forecast_text}")
 
 
-async def get_binary_forecast(question_details, write=print):
+async def get_binary_forecast(question_details, write=None, return_details: bool = False):
+    # Configure Perplexity budget in historical/current pairs
+    reset_perplexity_budget()
     today = datetime.datetime.now().strftime("%Y-%m-%d")
     title = question_details["title"]
     resolution_criteria = question_details["resolution_criteria"]
     background = question_details["description"]
     fine_print = question_details["fine_print"]
+    logger = get_current_logger()
+    question_errors = []
+
+    def log(message: str, level: str = "info") -> None:
+        logger.log(message, level=level)
+        if write:
+            write(message)
+        if level == "error" or "[ERROR]" in message:
+            question_errors.append(message)
 
     async def format_and_call_gpt(prompt_template):
         content = prompt_template.format(
@@ -61,15 +74,43 @@ async def get_binary_forecast(question_details, write=print):
         historical_task, current_task
     )
 
+    def has_usable_research(text: str) -> bool:
+        if not text or not text.strip():
+            return False
+        lowered = text.lower()
+        negative_markers = [
+            "no usable content",
+            "asknews disabled",
+            "no urls returned",
+            "scraping disabled",
+            "error retrieving",
+        ]
+        positive_markers = [
+            "<summary",
+            "<rawcontent",
+            "<agent_report",
+            "<asknews_articles",
+        ]
+        if any(marker in lowered for marker in positive_markers):
+            return True
+        if all(marker in lowered for marker in negative_markers):
+            return False
+        return len(text.strip()) > 300
+
     context_historical, context_current = await asyncio.gather(
-        process_search_queries(historical_output, forecaster_id="-1", question_details=question_details),
-        process_search_queries(current_output, forecaster_id="0", question_details=question_details),
+        process_search_queries(historical_output, forecaster_id="-1", question_details=question_details, perplexity_bucket="historical"),
+        process_search_queries(current_output, forecaster_id="0", question_details=question_details, perplexity_bucket="current"),
     )
 
-    write("\nHistorical context LLM output:\n" + historical_output)
-    write("\nCurrent context LLM output:\n" + current_output)
-    write("\nHistorical context search results:\n" + context_historical)
-    write("\nCurrent context search results:\n" + context_current)
+    if not has_usable_research(context_historical) and not has_usable_research(context_current):
+        msg = "Research failure: no usable historical or current context retrieved. Check Perplexity or enable other sources."
+        log(msg, level="error")
+        raise RuntimeError(msg)
+
+    log("\nHistorical context LLM output:\n" + historical_output)
+    log("\nCurrent context LLM output:\n" + current_output)
+    log("\nHistorical context search results:\n" + context_historical)
+    log("\nCurrent context search results:\n" + context_current)
 
     prompt1 = BINARY_PROMPT_1.format(
         title=title,
@@ -91,7 +132,13 @@ async def get_binary_forecast(question_details, write=print):
     results_prompt1 = await run_prompt1()
 
     for i, res in enumerate(results_prompt1):
-        write(f"\nForecaster_{i+1} step 1 output:\n{res}")
+        log(f"\nForecaster_{i+1} step 1 output:\n{res}")
+
+    log(
+        "Research sources summary: "
+        f"prefer_perplexity={prefer_perplexity()} | ENABLE_PERPLEXITY={ENABLE_PERPLEXITY} | "
+        f"ENABLE_SERPER={ENABLE_SERPER} | ENABLE_BRIGHT_DATA={ENABLE_BRIGHT_DATA} | ENABLE_ASKNEWS={ENABLE_ASKNEWS}"
+    )
 
     context_map = {
         "1": f"Current context: {context_current}\nOutside view prediction: {results_prompt1[0]}",
@@ -110,25 +157,44 @@ async def get_binary_forecast(question_details, write=print):
             context=context_map[f_id],
         )
 
-    async def run_prompt2():
-        return await asyncio.gather(
-            call_forecaster_1(format_prompt2("1")),  # forecaster 1 - claude-haiku-4.5
-            call_forecaster_2(format_prompt2("2")),  # forecaster 2 - gemini-2.5-flash
-            call_forecaster_3(format_prompt2("3")),  # forecaster 3 - gpt-5-chat
-            call_forecaster_4(format_prompt2("4")),  # forecaster 4 - o4-mini
-            call_forecaster_5(format_prompt2("5")),  # forecaster 5 - grok-4-fast
-        )
+    forecaster_funcs = [
+        call_forecaster_1,
+        call_forecaster_2,
+        call_forecaster_3,
+        call_forecaster_4,
+        call_forecaster_5,
+    ]
+    prompts_prompt2 = [
+        format_prompt2("1"),
+        format_prompt2("2"),
+        format_prompt2("3"),
+        format_prompt2("4"),
+        format_prompt2("5"),
+    ]
 
-    results_prompt2 = await run_prompt2()
+    results_prompt2 = []
+    for func, prompt in zip(forecaster_funcs, prompts_prompt2):
+        results_prompt2.append(await func(prompt))
 
+    weights = [1, 1, 1, 1, 1]  # equal weights for all forecasters
     probabilities = []
-    for r in results_prompt2:
+
+    for idx, (func, prompt, output) in enumerate(zip(forecaster_funcs, prompts_prompt2, results_prompt2), start=1):
+        prob = None
         try:
-            prob = extract_probability_from_response_as_percentage_not_decimal(r)
-            probabilities.append(prob)
+            prob = extract_probability_from_response_as_percentage_not_decimal(output)
         except Exception as e:
-            write(f"Error extracting probability: {e}")
-            probabilities.append(None)
+            log(f"Error extracting probability from forecaster {idx} (first attempt): {e}", level="error")
+            try:
+                retry_output = await func(prompt)
+                results_prompt2[idx - 1] = retry_output
+                prob = extract_probability_from_response_as_percentage_not_decimal(retry_output)
+                log(f"Forecaster {idx} probability parsed on retry.", level="info")
+            except Exception as retry_e:
+                log(f"Error extracting probability from forecaster {idx} (retry): {retry_e}", level="error")
+                question_errors.append(f"Forecaster {idx} missing Probability line after retry.")
+                prob = None
+        probabilities.append(prob)
 
     valid_probs = [p for p in probabilities if p is not None]
     if len(valid_probs) >= 1:
@@ -140,14 +206,39 @@ async def get_binary_forecast(question_details, write=print):
     else:
         final_prob = None
 
-    write(f"\nFinal predictions: {probabilities}")
-    write(f"Result: {final_prob}")
+    log(f"\nFinal predictions (raw pct): {probabilities}")
+    log(f"Result (decimal): {final_prob}")
+    for idx, prob in enumerate(probabilities, start=1):
+        if prob is not None:
+            log(f"Forecaster {idx} probability: {prob/100:.3f}", level="probability")
+    if final_prob is not None:
+        log(f"Ensemble probability: {final_prob:.3f}", level="probability")
 
     final_outputs = "\n\n".join(
         f"=== Forecaster {i+1} ===\nOutput:\n{out}\nPredicted Probability: {prob if prob is not None else 'N/A'}%"
         for i, (out, prob) in enumerate(zip(results_prompt2, probabilities))
     )
 
-    write(final_outputs)
+    log(final_outputs)
+
+    # Summarize search usage for easy auditing
+    try:
+        search_counts = logger.get_search_counts()
+        serper_attempted, serper_success = logger.get_serper_url_stats()
+        log(
+            f"Search summary: {search_counts} | serper_attempted={serper_attempted} serper_success={serper_success}",
+            level="info",
+        )
+    except Exception:
+        pass
+
+    if return_details:
+        details = {
+            "probabilities_pct": probabilities,
+            "weights": weights,
+            "raw_outputs": results_prompt2,
+            "errors": question_errors,
+        }
+        return final_prob, final_outputs, details
 
     return final_prob, final_outputs

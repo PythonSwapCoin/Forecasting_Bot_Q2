@@ -1,0 +1,26 @@
+======================================================================
+POLYMARKET BENCHMARK
+Created: 20251206_1427
+Questions: 4
+Model config (forecasters 1-5):
+  Forecaster 1: anthropic/claude-haiku-4.5
+  Forecaster 2: google/gemini-2.5-flash
+  Forecaster 3: openai/gpt-5-mini
+  Forecaster 4: openai/o4-mini
+  Forecaster 5: x-ai/grok-4-fast
+======================================================================
+
+SCOREBOARD
+- Will Jose Antonio Kast win the 2025 Chilean presidential election? | forecast=0.307 | market=0.970 | Brier=0.4394 | MAE=0.6629 | status=ok
+- Will NVIDIA be the world's largest company by market cap on December 31, 2025? | forecast=0.159 | market=0.880 | Brier=0.5205 | MAE=0.7214 | status=ok
+- Will the Federal Reserve cut the target federal funds upper bound by 25 bps at the December 2025 meeting? | forecast=0.200 | market=0.940 | Brier=0.5476 | MAE=0.7400 | status=ok
+- Will TIME's 2025 Person of the Year be Artificial Intelligence? | forecast=0.091 | market=0.420 | Brier=0.1080 | MAE=0.3286 | status=ok
+
+Average Brier: 0.4038
+Average MAE: 0.6132
+
+Files:
+- summary.json: machine-readable scores
+- questions/: per-question details & raw outputs
+- scores_by_forecaster.csv: per-forecaster probabilities
+- errors.txt: any issues or contamination flags

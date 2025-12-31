@@ -6,6 +6,7 @@ import re
 import dotenv
 dotenv.load_dotenv()
 from forecaster import binary_forecast, numeric_forecast, multiple_choice_forecast
+from prompts import FORECAST_COMMENT_SUMMARY_PROMPT
 
 import numpy as np
 import requests
@@ -31,7 +32,6 @@ PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
 ASKNEWS_CLIENT_ID = os.getenv("ASKNEWS_CLIENT_ID")
 ASKNEWS_SECRET = os.getenv("ASKNEWS_SECRET")
 EXA_API_KEY = os.getenv("EXA_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") # You'll also need the OpenAI API Key if you want to use the Exa Smart Searcher
 
 # The tournament IDs below can be used for testing your bot.
 Q4_2024_AI_BENCHMARKING_ID = 32506
@@ -282,16 +282,9 @@ async def forecast_individual_question(
         comment_str = json.dumps(comment, indent=2) if not isinstance(comment, str) else comment
         summary_of_forecast += f"Comment:\n```\n{comment_str}...\n```\n\n"
 
-        summary_prompt = f"""Below is a detailed explanation for a forecast posted on Metaculus, comprising reasoning from a team of five forecasters.
-Please summarize it into a concise 5-7 sentence paragraph suitable for a forecast comment. 
-Ensure you preserve the key reasoning, especially if relevant sources, probabilities, or 
-contextual comparisons are mentioned. Reference key agreements and possible disagreements between forecasters. You may conclude by briefly referencing the five final forecast values. 
-
-Please begin the summary straightaway by briefly describing the question, DO NOT prefix your answer with something like 'Here is the summarized reasoning:' or 'Forecaster summary:'.
-
-Forecast Explanation:
-{comment_str}
-"""
+        summary_prompt = FORECAST_COMMENT_SUMMARY_PROMPT.format(
+            forecast_explanation=comment_str
+        )
 
         try:
             short_comment = await call_gpt(summary_prompt)

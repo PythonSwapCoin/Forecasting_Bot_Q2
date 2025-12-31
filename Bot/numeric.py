@@ -359,7 +359,7 @@ def generate_continuous_cdf(percentile_values, open_upper_bound, open_lower_boun
     
     return cdf_y.tolist()
 
-async def get_numeric_forecast(question_details: dict, write=print):
+async def get_numeric_forecast(question_details: dict, write=None):
     today = datetime.datetime.now().strftime("%Y-%m-%d")
     title = question_details["title"]
     resolution = question_details["resolution_criteria"]
@@ -371,6 +371,13 @@ async def get_numeric_forecast(question_details: dict, write=print):
     lower = question_details["scaling"]["range_min"]
     zero = question_details["scaling"].get("zero_point")
     unit = question_details.get("unit", "(unknown)")
+    from logging_utils import get_current_logger
+    logger = get_current_logger()
+
+    def log(message: str, level: str = "info") -> None:
+        logger.log(message, level=level)
+        if write:
+            write(message)
 
     async def format_call(prompt):
         txt = prompt.format(
@@ -389,8 +396,8 @@ async def get_numeric_forecast(question_details: dict, write=print):
     hist_context = await process_search_queries(hist_out, forecaster_id="-1", question_details=question_details)
     curr_context = await process_search_queries(curr_out, forecaster_id="0", question_details=question_details)
 
-    write(f"Historical output: {hist_out}\nContext: {hist_context}")
-    write(f"Current output: {curr_out}\nContext: {curr_context}")
+    log(f"Historical output: {hist_out}\nContext: {hist_context}")
+    log(f"Current output: {curr_out}\nContext: {curr_context}")
 
     prompt1 = NUMERIC_PROMPT_1.format(
         title=title, today=today, resolution_criteria=resolution,
@@ -406,7 +413,7 @@ async def get_numeric_forecast(question_details: dict, write=print):
     )
 
     for i, out in enumerate(base_forecasts):
-        write(f"\nForecaster_{i+1} step 1 output:\n{out}")
+        log(f"\nForecaster_{i+1} step 1 output:\n{out}")
 
 
     context_map = {
@@ -432,12 +439,12 @@ async def get_numeric_forecast(question_details: dict, write=print):
 
     for i, output in enumerate(step2_outputs):
         try:
-            parsed = extract_percentiles_from_response(output, verbose=True)
+            parsed = extract_percentiles_from_response(output, verbose=False)
             parsed = enforce_strict_increasing(parsed)
             cdf = generate_continuous_cdf(parsed, open_upper, open_lower, upper, lower, zero)
             all_cdfs.append((cdf, 2 if (i == 4 or i == 3) else 1))
         except Exception as e:
-            write(f"❌ Forecaster {i+1} failed: {e}")
+            log(f"❌ Forecaster {i+1} failed: {e}", level="error")
         final_outputs.append(f"=== Forecaster {i+1} ===\n{output}\n")
 
     if len(all_cdfs) < 3:
@@ -451,5 +458,5 @@ async def get_numeric_forecast(question_details: dict, write=print):
         raise RuntimeError(f"🚨 Combined CDF malformed: {len(combined)} points")
 
     comment = "Combined CDF: `" + str(combined[:5]) + "...`\n\n" + "\n\n".join(final_outputs)
-    write(comment)
+    log(comment)
     return combined, comment

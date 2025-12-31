@@ -6,7 +6,6 @@ dateparser
 dotenv
 matplotlib
 numpy
-openai
 pandas
 python-dotenv
 readability-lxml

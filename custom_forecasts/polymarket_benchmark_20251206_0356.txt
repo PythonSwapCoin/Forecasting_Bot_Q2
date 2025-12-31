@@ -1,0 +1,10 @@
+======================================================================
+POLYMARKET BENCHMARK
+Created: 20251206_0356
+Questions: 4
+======================================================================
+
+--- Q1: Will José Antonio Kast win the 2025 Chilean presidential election? ---
+Market probability: 0.970
+Resolution: Resolves YES if José Antonio Kast is reported as the official winner by the Chilean Electoral Service (Servel). Resolves NO otherwise, including if the winner is unknown by 2026-05-31 23:59 ET.
+Context: Market tracks whether José Antonio Kast is ultimately declared the winner of the Chilean presidential election scheduled for November 16, 2025, including any required second round.

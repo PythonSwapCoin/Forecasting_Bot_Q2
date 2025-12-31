@@ -4,23 +4,25 @@ import os
 from aiohttp import ClientSession, ClientTimeout, ClientError
 import json
 import sys
-from openai import OpenAI
 import re
 import io
 from dotenv import load_dotenv
 from prompts import claude_context, gpt_context
 from model_config import get_forecaster_model
+from logging_utils import get_current_logger
 """
 This file contains the main forecasting logic, question-type specific functions are abstracted.
 """
-def write(x):
-    print(x)
+
+
+def _log(message: str, level: str = "info") -> None:
+    logger = get_current_logger()
+    logger.log(message, level=level)
 
 
 
 load_dotenv()
 METACULUS_TOKEN = os.getenv("METACULUS_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 async def call_anthropic_api(prompt, max_tokens=16000, max_retries=7, cached_content=claude_context):
@@ -61,17 +63,17 @@ async def call_anthropic_api(prompt, max_tokens=16000, max_retries=7, cached_con
         backoff_delay = min(2 ** attempt, 60)
         
         try:
-            write(f"Starting API call attempt {attempt + 1}")
+            _log(f"Starting API call attempt {attempt + 1}")
             timeout = ClientTimeout(total=300)  # 5 minutes total timeout
             
             async with ClientSession(timeout=timeout) as session:
                 async with session.post(url, headers=headers, json=data) as response:
                     if response.status != 200:
                         error_text = await response.text()
-                        write(f"API error (status {response.status}): {error_text}")
+                        _log(f"API error (status {response.status}): {error_text}", level="error")
                         
                         if response.status in [429, 503]:  # Rate limit or service unavailable
-                            write(f"Retryable error. Waiting {backoff_delay} seconds...")
+                            _log(f"Retryable error. Waiting {backoff_delay} seconds...", level="info")
                             await asyncio.sleep(backoff_delay)
                             continue
                             
@@ -86,20 +88,20 @@ async def call_anthropic_api(prompt, max_tokens=16000, max_retries=7, cached_con
                         if block.get("type") == "thinking":
                             thinking = block.get("thinking")
                     
-                    print(f"Claude's thinking: {thinking}")
+                    _log(f"Claude thinking block captured ({len(thinking)} chars)", level="info")
                     return text
                     
-                    write("No 'text' block found in content.")
+                    _log("No 'text' block found in content.", level="error")
                     return "No final answer found in Claude response."
                         
         except (ClientError, asyncio.TimeoutError) as e:
-            write(f"Retryable error on attempt {attempt + 1}: {str(e)}")
+            _log(f"Retryable error on attempt {attempt + 1}: {str(e)}", level="error")
             if attempt == max_retries - 1:
                 raise
             await asyncio.sleep(backoff_delay)
             
         except Exception as e:
-            write(f"Unexpected error on attempt {attempt + 1}: {str(e)}")
+            _log(f"Unexpected error on attempt {attempt + 1}: {str(e)}", level="error")
             if attempt == max_retries - 1:
                 raise
             await asyncio.sleep(backoff_delay)
@@ -112,13 +114,13 @@ async def call_claude(prompt):
         response = await call_anthropic_api(prompt)
         
         if not response:
-            write("Warning: Empty response from Anthropic API")
+            _log("Warning: Empty response from Anthropic API", level="error")
             return "API returned empty response"
             
         return response
         
     except Exception as e:
-        write(f"Error in call_claude: {str(e)}")
+        _log(f"Error in call_claude: {str(e)}", level="error")
         return f"Error generating response: {str(e)}"
     
 
@@ -146,231 +148,110 @@ def extract_and_run_python_code(llm_output: str) -> str:
 
     return new_stdout.getvalue()
 
-# Calls o4-mini using personal OpenAI credentials
-async def call_gpt(prompt):
-    client = OpenAI(api_key=OPENAI_API_KEY)
-    response = client.chat.completions.create(
-        model="o4-mini",
-        messages=[
-            {"role": "user", "content": gpt_context + "\n" + prompt}
-        ]
-    )
-    return response.choices[0].message.content
-
-async def call_gpt_o3_personal(prompt):
-    client = OpenAI(api_key=OPENAI_API_KEY)
-    response = client.chat.completions.create(
-        model="o3",
-        messages=[
-            {"role": "user", "content": gpt_context + "\n" + prompt}
-        ]
-    )
-    return response.choices[0].message.content
+def _openrouter_headers() -> dict:
+    if not OPENROUTER_API_KEY:
+        raise ValueError("OPENROUTER_API_KEY not found in environment variables")
+    return {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/your-repo",
+        "X-Title": "Forecasting Bot",
+    }
 
 
-async def call_gpt_o3(prompt):
-    # Temporarily short metaculus proxy using personal credits.
-    ans = await call_gpt_o3_personal(prompt)
-    return ans
-    try:
-        url = "https://llm-proxy.metaculus.com/proxy/openai/v1/chat/completions"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Token {METACULUS_TOKEN}"
-        }
-        
-        data = {
-            "model": "o3",
-            "messages": [{"role": "user", "content": prompt}],
-        }
-        
-        timeout = ClientTimeout(total=300)  # 5 minutes total timeout
-        
-        async with ClientSession(timeout=timeout) as session:
-            async with session.post(url, headers=headers, json=data) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    write(f"API error (status {response.status}): {error_text}")
-                    response.raise_for_status()
-                
-                result = await response.json()
-                
-                answer = result['choices'][0]['message']['content']
-                if answer is None:
-                    raise ValueError("No answer returned from GPT")
-                return answer
-                
-    except Exception as e:
-        write(f"Error in call_gpt: {str(e)}")
-        return f"Error generating response: {str(e)}"
+async def call_openrouter_chat(
+    prompt: str,
+    *,
+    model: str,
+    system: str | None = None,
+    max_tokens: int = 16000,
+    max_retries: int = 3,
+) -> str:
+    """
+    Generic OpenRouter chat caller used for all GPT-family traffic.
+    """
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = _openrouter_headers()
+
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+
+    data = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": messages,
+    }
+
+    for attempt in range(max_retries):
+        backoff_delay = min(2 ** attempt, 30)
+        try:
+            _log(f"OpenRouter {model} attempt {attempt + 1}", level="info")
+            timeout = ClientTimeout(total=300)
+            async with ClientSession(timeout=timeout) as session:
+                async with session.post(url, headers=headers, json=data) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        _log(f"OpenRouter API error (status {response.status}): {error_text}", level="error")
+                        if response.status in [429, 503]:
+                            await asyncio.sleep(backoff_delay)
+                            continue
+                        response.raise_for_status()
+
+                    result = await response.json()
+                    return result["choices"][0]["message"]["content"]
+        except (ClientError, asyncio.TimeoutError) as e:
+            _log(f"OpenRouter retryable error on attempt {attempt + 1}: {str(e)}", level="error")
+            if attempt == max_retries - 1:
+                raise
+            await asyncio.sleep(backoff_delay)
+        except Exception as e:
+            _log(f"OpenRouter unexpected error on attempt {attempt + 1}: {str(e)}", level="error")
+            if attempt == max_retries - 1:
+                raise
+            await asyncio.sleep(backoff_delay)
+
+    raise Exception(f"OpenRouter {model} failed after {max_retries} attempts")
 
 
-async def call_gpt_o4_mini(prompt):
-    prompt = gpt_context + "\n" + prompt
-    try:
-        url = "https://llm-proxy.metaculus.com/proxy/openai/v1/chat/completions"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Token {METACULUS_TOKEN}"
-        }
-        
-        data = {
-            "model": "o4-mini",
-            "messages": [{"role": "user", "content": prompt}],
-        }
-        
-        timeout = ClientTimeout(total=300)  # 5 minutes total timeout
-        
-        async with ClientSession(timeout=timeout) as session:
-            async with session.post(url, headers=headers, json=data) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    write(f"API error (status {response.status}): {error_text}")
-                    response.raise_for_status()
-                
-                result = await response.json()
-                
-                answer = result['choices'][0]['message']['content']
-                if answer is None:
-                    raise ValueError("No answer returned from GPT")
-                return answer
-                
-    except Exception as e:
-        write(f"Error in call_gpt: {str(e)}")
-        return f"Error generating response: {str(e)}"
+async def call_gpt(prompt: str, *, model: str = "openai/o4-mini", max_tokens: int = 4000) -> str:
+    """General GPT caller (OpenRouter-backed)."""
+    return await call_openrouter_chat(prompt, model=model, system=gpt_context, max_tokens=max_tokens)
+
+
+async def call_gpt_o3(prompt: str, *, max_tokens: int = 16000) -> str:
+    """
+    Equivalent to the prior o3 helper but routed through OpenRouter.
+    """
+    return await call_openrouter_chat(prompt, model="openai/o3-mini", system=gpt_context, max_tokens=max_tokens)
+
+
+async def call_gpt_o4_mini(prompt: str, *, max_tokens: int = 16000) -> str:
+    return await call_openrouter_chat(prompt, model="openai/o4-mini", system=gpt_context, max_tokens=max_tokens)
 
 
 # OpenRouter API functions
 async def call_openrouter_claude(prompt, max_tokens=16000, max_retries=3):
     """Call Claude via OpenRouter as fallback for Metaculus proxy"""
-    if not OPENROUTER_API_KEY:
-        raise ValueError("OPENROUTER_API_KEY not found in environment variables")
-    
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/your-repo",  # Optional: replace with your repo
-        "X-Title": "Forecasting Bot"  # Optional: replace with your app name
-    }
-    
-    data = {
-        "model": "anthropic/claude-3.5-sonnet",
-        "max_tokens": max_tokens,
-        "messages": [
-            {
-                "role": "system",
-                "content": claude_context
-            },
-            {
-                "role": "user", 
-                "content": prompt
-            }
-        ]
-    }
-    
-    for attempt in range(max_retries):
-        backoff_delay = min(2 ** attempt, 30)
-        
-        try:
-            write(f"OpenRouter Claude attempt {attempt + 1}")
-            timeout = ClientTimeout(total=300)
-            
-            async with ClientSession(timeout=timeout) as session:
-                async with session.post(url, headers=headers, json=data) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        write(f"OpenRouter API error (status {response.status}): {error_text}")
-                        
-                        if response.status in [429, 503]:
-                            write(f"Rate limited. Waiting {backoff_delay} seconds...")
-                            await asyncio.sleep(backoff_delay)
-                            continue
-                            
-                        response.raise_for_status()
-                    
-                    result = await response.json()
-                    return result['choices'][0]['message']['content']
-                    
-        except (ClientError, asyncio.TimeoutError) as e:
-            write(f"OpenRouter retryable error on attempt {attempt + 1}: {str(e)}")
-            if attempt == max_retries - 1:
-                raise
-            await asyncio.sleep(backoff_delay)
-            
-        except Exception as e:
-            write(f"OpenRouter unexpected error on attempt {attempt + 1}: {str(e)}")
-            if attempt == max_retries - 1:
-                raise
-            await asyncio.sleep(backoff_delay)
-
-    raise Exception(f"OpenRouter Claude failed after {max_retries} attempts")
+    return await call_openrouter_chat(
+        prompt,
+        model="anthropic/claude-3.5-sonnet",
+        system=claude_context,
+        max_tokens=max_tokens,
+        max_retries=max_retries,
+    )
 
 
 async def call_openrouter_gpt(prompt, model="openai/gpt-4o", max_tokens=16000, max_retries=3):
     """Call GPT via OpenRouter as fallback for Metaculus proxy"""
-    if not OPENROUTER_API_KEY:
-        raise ValueError("OPENROUTER_API_KEY not found in environment variables")
-    
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/your-repo",
-        "X-Title": "Forecasting Bot"
-    }
-    
-    data = {
-        "model": model,
-        "max_tokens": max_tokens,
-        "messages": [
-            {
-                "role": "system",
-                "content": gpt_context
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
-    }
-    
-    for attempt in range(max_retries):
-        backoff_delay = min(2 ** attempt, 30)
-        
-        try:
-            write(f"OpenRouter GPT attempt {attempt + 1}")
-            timeout = ClientTimeout(total=300)
-            
-            async with ClientSession(timeout=timeout) as session:
-                async with session.post(url, headers=headers, json=data) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        write(f"OpenRouter API error (status {response.status}): {error_text}")
-                        
-                        if response.status in [429, 503]:
-                            write(f"Rate limited. Waiting {backoff_delay} seconds...")
-                            await asyncio.sleep(backoff_delay)
-                            continue
-                            
-                        response.raise_for_status()
-                    
-                    result = await response.json()
-                    return result['choices'][0]['message']['content']
-                    
-        except (ClientError, asyncio.TimeoutError) as e:
-            write(f"OpenRouter retryable error on attempt {attempt + 1}: {str(e)}")
-            if attempt == max_retries - 1:
-                raise
-            await asyncio.sleep(backoff_delay)
-            
-        except Exception as e:
-            write(f"OpenRouter unexpected error on attempt {attempt + 1}: {str(e)}")
-            if attempt == max_retries - 1:
-                raise
-            await asyncio.sleep(backoff_delay)
-
-    raise Exception(f"OpenRouter GPT failed after {max_retries} attempts")
+    return await call_openrouter_chat(
+        prompt,
+        model=model,
+        system=gpt_context,
+        max_tokens=max_tokens,
+        max_retries=max_retries,
+    )
 
 
 # Enhanced functions with fallback logic
@@ -382,52 +263,25 @@ async def call_claude_with_fallback(prompt):
         if response and not response.startswith("Error generating response"):
             return response
     except Exception as e:
-        write(f"Metaculus Claude failed: {str(e)}")
+        _log(f"Metaculus Claude failed: {str(e)}", level="error")
     
     # Fallback to OpenRouter
     try:
-        write("Falling back to OpenRouter Claude...")
+        _log("Falling back to OpenRouter Claude...", level="info")
         return await call_openrouter_claude(prompt)
     except Exception as e:
-        write(f"OpenRouter Claude also failed: {str(e)}")
+        _log(f"OpenRouter Claude also failed: {str(e)}", level="error")
         return f"Error generating response: {str(e)}"
 
 
 async def call_gpt_o4_mini_with_fallback(prompt):
-    """Call GPT-o4-mini with fallback to OpenRouter if Metaculus proxy fails"""
+    """
+    Call GPT-o4-mini via OpenRouter (single path to avoid OpenAI API usage).
+    """
     try:
-        # Try Metaculus proxy first
-        prompt_with_context = gpt_context + "\n" + prompt
-        url = "https://llm-proxy.metaculus.com/proxy/openai/v1/chat/completions"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Token {METACULUS_TOKEN}"
-        }
-        
-        data = {
-            "model": "o4-mini",
-            "messages": [{"role": "user", "content": prompt_with_context}],
-        }
-        
-        timeout = ClientTimeout(total=300)
-        
-        async with ClientSession(timeout=timeout) as session:
-            async with session.post(url, headers=headers, json=data) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    return result['choices'][0]['message']['content']
-                else:
-                    raise Exception(f"Metaculus proxy returned status {response.status}")
-                    
+        return await call_openrouter_gpt(prompt, model="openai/o4-mini")
     except Exception as e:
-        write(f"Metaculus GPT-o4-mini failed: {str(e)}")
-    
-    # Fallback to OpenRouter
-    try:
-        write("Falling back to OpenRouter GPT-4o...")
-        return await call_openrouter_gpt(prompt, model="openai/gpt-4o")
-    except Exception as e:
-        write(f"OpenRouter GPT-4o also failed: {str(e)}")
+        _log(f"OpenRouter GPT-o4-mini failed: {str(e)}", level="error")
         return f"Error generating response: {str(e)}"
 
 
@@ -449,15 +303,10 @@ async def call_forecaster_model(forecaster_id: int, prompt: str, max_tokens: int
         raise ValueError("OPENROUTER_API_KEY not found in environment variables")
     
     model = get_forecaster_model(forecaster_id)
-    write(f"Using {model} for forecaster {forecaster_id}")
+    _log(f"Using {model} for forecaster {forecaster_id}", level="info")
     
     url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/your-repo",
-        "X-Title": "Forecasting Bot"
-    }
+    headers = _openrouter_headers()
     
     # Choose appropriate context based on model type
     if "claude" in model.lower():
@@ -487,17 +336,17 @@ async def call_forecaster_model(forecaster_id: int, prompt: str, max_tokens: int
         backoff_delay = min(2 ** attempt, 30)
         
         try:
-            write(f"OpenRouter {model} attempt {attempt + 1} for forecaster {forecaster_id}")
+            _log(f"OpenRouter {model} attempt {attempt + 1} for forecaster {forecaster_id}", level="info")
             timeout = ClientTimeout(total=300)
             
             async with ClientSession(timeout=timeout) as session:
                 async with session.post(url, headers=headers, json=data) as response:
                     if response.status != 200:
                         error_text = await response.text()
-                        write(f"OpenRouter API error (status {response.status}): {error_text}")
+                        _log(f"OpenRouter API error (status {response.status}): {error_text}", level="error")
                         
                         if response.status in [429, 503]:
-                            write(f"Rate limited. Waiting {backoff_delay} seconds...")
+                            _log(f"Rate limited. Waiting {backoff_delay} seconds...", level="info")
                             await asyncio.sleep(backoff_delay)
                             continue
                             
@@ -507,13 +356,13 @@ async def call_forecaster_model(forecaster_id: int, prompt: str, max_tokens: int
                     return result['choices'][0]['message']['content']
                     
         except (ClientError, asyncio.TimeoutError) as e:
-            write(f"OpenRouter retryable error on attempt {attempt + 1}: {str(e)}")
+            _log(f"OpenRouter retryable error on attempt {attempt + 1}: {str(e)}", level="error")
             if attempt == max_retries - 1:
                 raise
             await asyncio.sleep(backoff_delay)
             
         except Exception as e:
-            write(f"OpenRouter unexpected error on attempt {attempt + 1}: {str(e)}")
+            _log(f"OpenRouter unexpected error on attempt {attempt + 1}: {str(e)}", level="error")
             if attempt == max_retries - 1:
                 raise
             await asyncio.sleep(backoff_delay)

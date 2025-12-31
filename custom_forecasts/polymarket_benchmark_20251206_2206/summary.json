@@ -1,0 +1,148 @@
+{
+  "run": {
+    "timestamp": "20251206_2206",
+    "questions": 4,
+    "avg_brier": 0.1377,
+    "avg_mae": 0.3052,
+    "models": {
+      "forecaster_1": "anthropic/claude-haiku-4.5",
+      "forecaster_2": "google/gemini-2.5-flash",
+      "forecaster_3": "openai/gpt-5-mini",
+      "forecaster_4": "openai/o4-mini",
+      "forecaster_5": "x-ai/grok-4-fast"
+    },
+    "search_api_counts": {
+      "serper": 432,
+      "asknews": 2
+    }
+  },
+  "questions": [
+    {
+      "title": "Will Jose Antonio Kast win the 2025 Chilean presidential election?",
+      "forecast": 0.57,
+      "market": 0.97,
+      "brier": 0.16,
+      "mae": 0.4,
+      "per_forecaster": [
+        0.71,
+        0.8,
+        0.78,
+        0.4,
+        0.45
+      ],
+      "weights": [
+        1,
+        1,
+        1,
+        2,
+        2
+      ],
+      "status": "error",
+      "contamination": true
+    },
+    {
+      "title": "Will NVIDIA be the world's largest company by market cap on December 31, 2025?",
+      "forecast": 0.8543,
+      "market": 0.88,
+      "brier": 0.0007,
+      "mae": 0.0257,
+      "per_forecaster": [
+        0.85,
+        0.75,
+        0.92,
+        0.88,
+        0.85
+      ],
+      "weights": [
+        1,
+        1,
+        1,
+        2,
+        2
+      ],
+      "status": "ok",
+      "contamination": false
+    },
+    {
+      "title": "Will the Federal Reserve cut the target federal funds upper bound by 25 bps at the December 2025 meeting?",
+      "forecast": 0.35,
+      "market": 0.94,
+      "brier": 0.3481,
+      "mae": 0.59,
+      "per_forecaster": [
+        0.19,
+        0.15,
+        0.35,
+        0.6,
+        0.28
+      ],
+      "weights": [
+        1,
+        1,
+        1,
+        2,
+        2
+      ],
+      "status": "ok",
+      "contamination": false
+    },
+    {
+      "title": "Will TIME's 2025 Person of the Year be Artificial Intelligence?",
+      "forecast": 0.215,
+      "market": 0.42,
+      "brier": 0.042,
+      "mae": 0.205,
+      "per_forecaster": [
+        null,
+        0.36,
+        0.45,
+        0.18,
+        0.06
+      ],
+      "weights": [
+        1,
+        1,
+        1,
+        2,
+        2
+      ],
+      "status": "error",
+      "contamination": true
+    }
+  ],
+  "per_forecaster": {
+    "forecaster_1": {
+      "model": "anthropic/claude-haiku-4.5",
+      "avg_brier": 0.2103,
+      "avg_mae": 0.3467,
+      "n": 3
+    },
+    "forecaster_2": {
+      "model": "google/gemini-2.5-flash",
+      "avg_brier": 0.1684,
+      "avg_mae": 0.2875,
+      "n": 4
+    },
+    "forecaster_3": {
+      "model": "openai/gpt-5-mini",
+      "avg_brier": 0.0967,
+      "avg_mae": 0.2125,
+      "n": 4
+    },
+    "forecaster_4": {
+      "model": "openai/o4-mini",
+      "avg_brier": 0.1245,
+      "avg_mae": 0.2875,
+      "n": 4
+    },
+    "forecaster_5": {
+      "model": "x-ai/grok-4-fast",
+      "avg_brier": 0.2091,
+      "avg_mae": 0.3925,
+      "n": 4
+    }
+  },
+  "forecaster_query_counts": {
+    "forecaster_0": 10
+  }
+}

@@ -1,0 +1,109 @@
+{
+  "run": {
+    "timestamp": "20251206_0521",
+    "questions": 4,
+    "avg_brier": 0.1613,
+    "avg_mae": 0.3259,
+    "models": {
+      "forecaster_1": "anthropic/claude-haiku-4.5",
+      "forecaster_2": "google/gemini-2.5-flash",
+      "forecaster_3": "openai/gpt-5-chat",
+      "forecaster_4": "openai/o4-mini",
+      "forecaster_5": "x-ai/grok-4-fast"
+    }
+  },
+  "questions": [
+    {
+      "title": "Will Jos\u00e9 Antonio Kast win the 2025 Chilean presidential election?",
+      "forecast": 0.305,
+      "market": 0.97,
+      "brier": 0.4422,
+      "mae": 0.665,
+      "per_forecaster": [
+        0.22,
+        0.45,
+        null,
+        0.2,
+        0.38
+      ],
+      "weights": [
+        1,
+        1,
+        1,
+        2,
+        2
+      ],
+      "status": "incomplete",
+      "contamination": true
+    },
+    {
+      "title": "Will NVIDIA be the world\u2019s largest company by market cap on December 31, 2025?",
+      "forecast": 0.8871,
+      "market": 0.88,
+      "brier": 0.0001,
+      "mae": 0.0071,
+      "per_forecaster": [
+        0.78,
+        0.94,
+        0.83,
+        0.93,
+        0.9
+      ],
+      "weights": [
+        1,
+        1,
+        1,
+        2,
+        2
+      ],
+      "status": "ok",
+      "contamination": false
+    },
+    {
+      "title": "Will the Federal Reserve cut the target federal funds upper bound by 25 bps at the December 2025 meeting?",
+      "forecast": 0.6657,
+      "market": 0.94,
+      "brier": 0.0752,
+      "mae": 0.2743,
+      "per_forecaster": [
+        0.65,
+        0.3,
+        0.67,
+        0.8,
+        0.72
+      ],
+      "weights": [
+        1,
+        1,
+        1,
+        2,
+        2
+      ],
+      "status": "ok",
+      "contamination": false
+    },
+    {
+      "title": "Will TIME\u2019s 2025 Person of the Year be Artificial Intelligence?",
+      "forecast": 0.0629,
+      "market": 0.42,
+      "brier": 0.1276,
+      "mae": 0.3571,
+      "per_forecaster": [
+        0.06,
+        0.03,
+        0.15,
+        0.05,
+        0.05
+      ],
+      "weights": [
+        1,
+        1,
+        1,
+        2,
+        2
+      ],
+      "status": "ok",
+      "contamination": false
+    }
+  ]
+}

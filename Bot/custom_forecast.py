@@ -7,6 +7,7 @@ It creates a mock question structure and uses the existing forecasting functions
 
 Usage:
     python custom_forecast.py
+    python custom_forecast.py --benchmark  # run Polymarket benchmark set
 
 The script will prompt you for:
 1. Question type (binary, numeric, multiple_choice)
@@ -16,6 +17,7 @@ The script will prompt you for:
 5. Additional details based on question type
 """
 
+import argparse
 import asyncio
 import datetime
 import json
@@ -27,6 +29,7 @@ from typing import Dict, Any, List, Union
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from forecaster import binary_forecast, numeric_forecast, multiple_choice_forecast
+from logging_utils import RunLogger, get_current_logger, set_current_logger
 
 def create_question_structure(
     question_type: str,
@@ -180,6 +183,13 @@ def get_user_input() -> Dict[str, Any]:
         **kwargs
     }
 
+
+def _slugify(text: str) -> str:
+    slug = "".join(c.lower() if c.isalnum() else "-" for c in text).strip("-")
+    if len(slug) > 80:
+        slug = slug[:80].rstrip("-")
+    return slug or "forecast"
+
 async def forecast_custom_question(question_params: Dict[str, Any]) -> None:
     """
     Forecast on a custom question using the existing forecasting functions.
@@ -200,16 +210,28 @@ async def forecast_custom_question(question_params: Dict[str, Any]) -> None:
     # Create output directory if it doesn't exist
     output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "custom_forecasts"))
     os.makedirs(output_dir, exist_ok=True)
-    
-    # Create filename from title
-    filename = f"{''.join(c if c.isalnum() else '_' for c in question_details['title'])[:100]}.txt"
-    output_path = os.path.join(output_dir, filename)
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+    run_slug = _slugify(question_details["title"])
+    run_dir = os.path.join(output_dir, f"{run_slug}_{timestamp}")
+    raw_dir = os.path.join(run_dir, "raw_outputs")
+    os.makedirs(raw_dir, exist_ok=True)
+
+    # Primary output file
+    output_path = os.path.join(run_dir, "forecast.txt")
+    log_path = os.path.join(run_dir, "run.log")
+    raw_path = os.path.join(raw_dir, "raw.txt")
     
     # Use safe context manager for writing
     with open(output_path, "w", encoding="utf-8") as f:
+        log_buffer: List[str] = []
+        logger = RunLogger(buffer=log_buffer, echo_errors=True, echo_probabilities=True, echo_info=False)
+        previous_logger = get_current_logger()
+        set_current_logger(logger)
+        final_comment = ""
+
         def write_to_file(line: str):
-            print(f"[WRITE] {line}")
             f.write(line + "\n")
+            logger.info(line)
         
         # Add question details to file
         write_to_file("=" * 60)
@@ -239,23 +261,44 @@ async def forecast_custom_question(question_params: Dict[str, Any]) -> None:
                 write_to_file(f"\nFINAL MULTIPLE CHOICE FORECAST: {json.dumps(forecast, indent=2)}")
             
             write_to_file(f"\nDETAILED COMMENT:\n{comment}")
+            final_comment = comment
             
         except Exception as e:
             error_msg = f"Error during forecasting: {str(e)}"
-            print(f"ERROR: {error_msg}")
+            logger.error(error_msg)
             write_to_file(f"\nERROR: {error_msg}")
             raise
+        finally:
+            set_current_logger(previous_logger)
+            with open(log_path, "w", encoding="utf-8") as log_file:
+                log_file.write("\n".join(log_buffer))
+            with open(raw_path, "w", encoding="utf-8") as raw_file:
+                raw_file.write("## Pipeline log\n```\n")
+                raw_file.write("\n".join(log_buffer))
+                raw_file.write("\n```\n\n## Full comment\n")
+                raw_file.write(final_comment)
     
-    print(f"\nForecast completed! Results saved to: {output_path}")
+    print(f"\nForecast completed. Results saved to: {run_dir}")
 
 def main():
     """Main function to run the custom forecasting script."""
+    parser = argparse.ArgumentParser(description="Custom question forecaster")
+    parser.add_argument(
+        "--benchmark",
+        action="store_true",
+        help="Run the Polymarket binary benchmark suite instead of interactive mode.",
+    )
+
+    args = parser.parse_args()
+
     try:
-        # Get user input
-        question_params = get_user_input()
-        
-        # Run the forecast
-        asyncio.run(forecast_custom_question(question_params))
+        if args.benchmark:
+            from polymarket_benchmark import run_polymarket_benchmark
+
+            asyncio.run(run_polymarket_benchmark())
+        else:
+            question_params = get_user_input()
+            asyncio.run(forecast_custom_question(question_params))
         
     except KeyboardInterrupt:
         print("\n\nForecasting cancelled by user.")

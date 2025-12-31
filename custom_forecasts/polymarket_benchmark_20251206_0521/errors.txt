@@ -1,0 +1,1 @@
+Q1 (Will José Antonio Kast win the 2025 Chilean presidential election?): status=incomplete, contamination=True

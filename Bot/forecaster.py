@@ -27,15 +27,23 @@ PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
 ASKNEWS_CLIENT_ID = os.getenv("ASKNEWS_CLIENT_ID")
 ASKNEWS_SECRET = os.getenv("ASKNEWS_SECRET")
 EXA_API_KEY = os.getenv("EXA_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") # You'll also need the OpenAI API Key if you want to use the Exa Smart Searcher
 
-async def numeric_forecast(question_details, write=print):
+async def numeric_forecast(question_details, write=None):
     return await get_numeric_forecast(question_details, write)
 
-async def binary_forecast(question_details, write=print):
-    return await get_binary_forecast(question_details, write)
+async def binary_forecast(question_details, write=None, return_details: bool = False):
+    """
+    Run binary forecast pipeline.
 
-async def multiple_choice_forecast(question_details, write=print):
+    Args:
+        question_details: question dict
+        write: logger function
+        return_details: when True, returns (forecast, comment, details) where details
+                        includes per-forecaster probabilities, weights, and raw outputs.
+    """
+    return await get_binary_forecast(question_details, write, return_details=return_details)
+
+async def multiple_choice_forecast(question_details, write=None):
     return await get_multiple_choice_forecast(question_details, write)
 
 

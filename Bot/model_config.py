@@ -16,7 +16,7 @@ load_dotenv()
 DEFAULT_MODEL_CONFIG = {
     "forecaster_1": "anthropic/claude-haiku-4.5",
     "forecaster_2": "google/gemini-2.5-flash", 
-    "forecaster_3": "openai/gpt-5-chat",
+    "forecaster_3": "openai/gpt-5-mini",
     "forecaster_4": "openai/o4-mini",
     "forecaster_5": "x-ai/grok-4-fast"
 }
@@ -32,6 +32,7 @@ ALTERNATIVE_MODELS = {
     "gpt_4o": "openai/gpt-4o",
     "gpt_4o_mini": "openai/gpt-4o-mini",
     "gpt_5_chat": "openai/gpt-5-chat",
+    "gpt_5_mini": "openai/gpt-5-mini",
     "o4_mini": "openai/o4-mini",
     
     # Gemini models

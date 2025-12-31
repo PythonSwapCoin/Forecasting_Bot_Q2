@@ -5,86 +5,34 @@ import os
 from aiohttp import ClientSession, ClientTimeout
 import dotenv
 from search import call_asknews, call_perplexity
-from llm_calls import call_claude, call_claude_with_fallback, call_gpt_o4_mini_with_fallback, call_forecaster_1, call_forecaster_2, call_forecaster_3, call_forecaster_4, call_forecaster_5
-from openai import OpenAI
+from llm_calls import (
+    call_claude,
+    call_claude_with_fallback,
+    call_gpt_o4_mini_with_fallback,
+    call_forecaster_1,
+    call_forecaster_2,
+    call_forecaster_3,
+    call_forecaster_4,
+    call_forecaster_5,
+    call_openrouter_gpt,
+)
 import asyncio
+from prompts import (
+    BINARY_PROMPT_TEMPLATE,
+    MULTIPLE_CHOICE_PROMPT_TEMPLATE,
+    RESEARCH_ASSISTANT_PROMPT_WITH_QUESTION,
+)
 
 def write(x):
     print(x)
 
 dotenv.load_dotenv()
 
-METACULUS_TOKEN = os.getenv("METACULUS_TOKEN")
 ASKNEWS_CLIENT_ID = os.getenv("ASKNEWS_CLIENT_ID")
 ASKNEWS_SECRET = os.getenv("ASKNEWS_SECRET")
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-client = OpenAI(api_key=OPENAI_API_KEY)
 
 NUM_RUNS = 5
-
-BINARY_PROMPT_TEMPLATE = """
-You are a professional forecaster interviewing for a job.
-
-Your interview question is:
-{title}
-
-Question background:
-{background}
-
-This question's outcome will be determined by the specific criteria below. These criteria have not yet been satisfied:
-{resolution_criteria}
-
-{fine_print}
-
-Your research assistant says:
-{summary_report}
-
-Today is {today}.
-
-Before answering you write:
-(a) The time left until the outcome to the question is known.
-(b) The status quo outcome if nothing changed.
-(c) A brief description of a scenario that results in a No outcome.
-(d) A brief description of a scenario that results in a Yes outcome.
-
-You write your rationale remembering that good forecasters put extra weight on the status quo outcome since the world changes slowly most of the time. Think deeply about the question and approach it from multiple possible viewpoints.
-
-The last thing you write is your final answer as: "Probability: ZZ%", 0-100
-"""
-
-MULTIPLE_CHOICE_PROMPT_TEMPLATE = """
-You are a professional forecaster interviewing for a job.
-
-Your interview question is:
-{title}
-
-The options are: {options}
-
-Background:
-{background}
-
-{resolution_criteria}
-
-{fine_print}
-
-Your research assistant says:
-{summary_report}
-
-Today is {today}.
-
-Before answering you write:
-(a) The time left until the outcome to the question is known.
-(b) The status quo outcome if nothing changed.
-(c) A description of an scenario that results in an unexpected outcome.
-
-You write your rationale remembering that (1) good forecasters put extra weight on the status quo outcome since the world changes slowly most of the time, and (2) good forecasters leave some moderate probability on most options to account for unexpected outcomes.
-
-The last thing you write is your final probabilities for the N options in this order {options}. Format your output **EXACTLY** as below, ensuring that the **probabilities are between 0 and 100, sum to 100, and are not followed by a % sign**:
-
-Probabilities: [Probability_1, Probability_2, ..., Probability_N]
-"""
 
 async def run_research(question: str, write=print) -> str:
     research = ""
@@ -92,15 +40,7 @@ async def run_research(question: str, write=print) -> str:
         prompt = f"Please fetch all news articles relevant to this forecasting question: {question}"
         research = await call_asknews(question)
 
-    prompt = f"""
-            You are an assistant to a superforecaster.
-            The superforecaster will give you a question they intend to forecast on.
-            To be a great assistant, you generate a concise but detailed rundown of the most relevant news, including if the question would resolve Yes or No based on current information.
-            You do not produce forecasts yourself.
-
-            Question:
-            {question}
-            """
+    prompt = RESEARCH_ASSISTANT_PROMPT_WITH_QUESTION.format(question=question)
     
     pplx = call_perplexity(prompt)
     research += pplx
@@ -109,50 +49,9 @@ async def run_research(question: str, write=print) -> str:
 
     return research
 
-# Calls o4-mini using personal OpenAI credentials
+# Calls o4-mini via OpenRouter
 async def call_llm(prompt):
-    client = OpenAI(api_key=OPENAI_API_KEY)
-    response = client.responses.create(
-        model="o4-mini",
-        input= prompt
-    )
-    return response.output_text
-
-
-async def call_gpt(prompt):
-    # We are temporarily going to short gpt while my o1 credits are out
-    prompt = prompt
-    try:
-        url = "https://llm-proxy.metaculus.com/proxy/openai/v1/chat/completions"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Token {METACULUS_TOKEN}"
-        }
-        
-        data = {
-            "model": "o1",
-            "messages": [{"role": "user", "content": prompt}],
-        }
-        
-        timeout = ClientTimeout(total=300)  # 5 minutes total timeout
-        
-        async with ClientSession(timeout=timeout) as session:
-            async with session.post(url, headers=headers, json=data) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    write(f"API error (status {response.status}): {error_text}")
-                    response.raise_for_status()
-                
-                result = await response.json()
-                
-                answer = result['choices'][0]['message']['content']
-                if answer is None:
-                    raise ValueError("No answer returned from GPT")
-                return answer
-                
-    except Exception as e:
-        write(f"Error in call_gpt: {str(e)}")
-        return f"Error generating response: {str(e)}"
+    return await call_openrouter_gpt(prompt, model="openai/o4-mini", max_tokens=4000)
 
 
 def extract_binary_probability(text: str) -> float:

@@ -6,64 +6,89 @@ import os
 # Add the parent directory to the path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from FastContentExtractor import FastContentExtractor
-from prompts import INITIAL_SEARCH_PROMPT, CONTINUATION_SEARCH_PROMPT
+from research_config import (
+    DEFAULT_RESEARCH_SOURCE,
+    ENABLE_ASKNEWS,
+    ENABLE_BRIGHT_DATA,
+    ENABLE_PERPLEXITY,
+    ENABLE_SERPER,
+    FALLBACK_TO_PERPLEXITY,
+    PERPLEXITY_CALL_LIMIT,
+    prefer_perplexity,
+)
+from prompts import (
+    ARTICLE_SUMMARY_PROMPT,
+    context,
+    CONTINUATION_SEARCH_PROMPT,
+    INITIAL_SEARCH_PROMPT,
+    PERPLEXITY_DEEP_RESEARCH_SYSTEM_PROMPT,
+    PERPLEXITY_DEEP_RESEARCH_USER_SUFFIX,
+)
 import dateparser
 from dotenv import load_dotenv
 import json
 import os
 from aiohttp import ClientSession, ClientTimeout
 from asknews_sdk import AskNewsSDK
-from prompts import context
 from dotenv import load_dotenv
 import aiohttp
 import re
 import random
 import time
-from openai import OpenAI   
 import traceback
+from llm_calls import call_openrouter_gpt
+from logging_utils import get_current_logger
 load_dotenv()
 
 SERPER_KEY = os.getenv("SERPER_KEY")
 ASKNEWS_CLIENT_ID = os.getenv("ASKNEWS_CLIENT_ID")
 ASKNEWS_SECRET = os.getenv("ASKNEWS_SECRET")
-PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
+PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")  # legacy, not required for OpenRouter
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 METACULUS_TOKEN = os.getenv("METACULUS_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+PERPLEXITY_AVAILABLE = bool(OPENROUTER_API_KEY) and ENABLE_PERPLEXITY
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+_perplexity_budget = {"historical": 0, "current": 0, "shared": 0}
 
-assistant_prompt = """
 
-You are an assistant to a superforecaster and your task involves high-quality information retrieval to help the forecaster make the most informed forecasts. Forecasting involves parsing through an immense trove of internet articles and web content. To make this easier for the forecaster, you read entire articles and extract the key pieces of the articles relevant to the question. The key pieces generally include:
+def reset_perplexity_budget(pairs: int | None = None) -> None:
+    """
+    Reset Perplexity call counters. By default, split an even budget into
+    historical/current pairs (at least 1 each), leaving shared=0.
+    """
+    global _perplexity_budget
+    total_limit = PERPLEXITY_CALL_LIMIT if PERPLEXITY_CALL_LIMIT > 0 else 2
+    if total_limit % 2 != 0:
+        total_limit -= 1
+    if total_limit < 2:
+        total_limit = 2
+    pair_count = pairs if pairs is not None else total_limit // 2
+    pair_count = max(1, pair_count)
+    _perplexity_budget = {"historical": pair_count, "current": pair_count, "shared": 0}
 
-1. Facts, statistics and other objective measurements described in the article
-2. Opinions from reliable and named sources (e.g. if the article writes 'according to a 2023 poll by Gallup' or 'The 2025 presidential approval rating poll by Reuters' etc.)
-3. Potentially useful opinions from less reliable/not-named sources (you explicitly document the less reliable origins of these opinions though)
 
-Today, you're focusing on the question:
+def set_perplexity_budget(historical: int, current: int, shared: int = 0) -> None:
+    """Explicitly set Perplexity budgets."""
+    global _perplexity_budget
+    _perplexity_budget = {
+        "historical": max(0, historical),
+        "current": max(0, current),
+        "shared": max(0, shared),
+    }
 
-{title}
 
-Resolution criteria:
-{resolution_criteria}
+def _consume_perplexity_budget(bucket: str | None) -> bool:
+    """Return True if a Perplexity call is allowed from the given bucket."""
+    global _perplexity_budget
+    use_bucket = bucket if bucket in _perplexity_budget else "shared"
+    if _perplexity_budget.get(use_bucket, 0) <= 0:
+        return False
+    _perplexity_budget[use_bucket] -= 1
+    return True
 
-Fine print:
-{fine_print}
-
-Background information:
-{background}
-
-Article to summarize:
-{article}
-
-Note: If the web content extraction is incomplete or you believe the quality of the extracted content isn't the best, feel free to add a disclaimer before your summary.
-
-Please summarize only the article given, not injecting your own knowledge or providing a forecast. Aim to achieve a balance between a superficial summary and an overly verbose account. 
-
-"""
-
-def write(x):
-    print(x)
+def log(message: str, level: str = "info") -> None:
+    logger = get_current_logger()
+    logger.log(message, level=level)
 
 def parse_date(date_str: str) -> str:
     parsed_date = dateparser.parse(date_str, settings={'STRICT_PARSING': False})
@@ -80,7 +105,7 @@ def validate_time(before_date_str, source_date_str):
 
 # new helper: takes raw article text + the question_details dict
 async def summarize_article(article: str, question_details: dict) -> str:
-    prompt = assistant_prompt.format(
+    prompt = ARTICLE_SUMMARY_PROMPT.format(
         title=question_details["title"],
         resolution_criteria=question_details["resolution_criteria"],
         fine_print=question_details["fine_print"],
@@ -95,6 +120,10 @@ async def call_asknews(question: str) -> str:
     Use the AskNews `news` endpoint to get news context for your query.
     The full API reference can be found here: https://docs.asknews.app/en/reference#get-/v1/news/search
     """
+    if not ENABLE_ASKNEWS:
+        return "AskNews disabled by config."
+    if not ASKNEWS_CLIENT_ID or not ASKNEWS_SECRET:
+        return "AskNews disabled (no credentials provided)."
     try:
         ask = AskNewsSDK(
             client_id=ASKNEWS_CLIENT_ID, client_secret=ASKNEWS_SECRET, scopes=set(["news"])
@@ -146,11 +175,11 @@ async def call_asknews(question: str) -> str:
 
         return formatted_articles
     except Exception as e:
-        write(f"[call_asknews] Error: {str(e)}")
+        log(f"[call_asknews] Error: {str(e)}", level="error")
         return f"Error retrieving news articles: {str(e)}"
     
 
-async def agentic_search(query: str) -> str:
+async def agentic_search(query: str, perplexity_bucket: str | None = None) -> str:
     """
     Performs agentic search using GPT to iteratively research and analyze a query.
     
@@ -160,7 +189,7 @@ async def agentic_search(query: str) -> str:
     Returns:
         The final comprehensive analysis
     """
-    write(f"[agentic_search] Starting research for query: {query}")
+    log(f"[agentic_search] Starting research for query: {query}")
     
     max_steps = 7
     current_analysis = ""
@@ -169,6 +198,9 @@ async def agentic_search(query: str) -> str:
     # Cost tracking variables
     total_input_tokens = 0
     total_output_tokens = 0
+
+    async def _return_immediate(val: str) -> str:
+        return val
     
     def estimate_tokens(text: str) -> int:
         """Estimate token count using ~4 characters per token rule for GPT models"""
@@ -203,7 +235,7 @@ async def agentic_search(query: str) -> str:
             total_input_tokens += prompt_tokens
             
             # Call GPT for analysis and search queries
-            write(f"[agentic_search] Step {step + 1}: Calling GPT")
+            log(f"[agentic_search] Step {step + 1}: Calling GPT")
             response = await call_gpt(prompt, step)
             
             # Track output tokens
@@ -213,28 +245,28 @@ async def agentic_search(query: str) -> str:
             # Parse the response
             analysis_match = re.search(r'Analysis:\s*(.*?)(?=Search queries:|$)', response, re.DOTALL)
             if not analysis_match:
-                write(f"[agentic_search] Error: Could not parse analysis from response")
+                log(f"[agentic_search] Error: Could not parse analysis from response", level="error")
                 return f"Error: Failed to parse analysis at step {step + 1}"
             
             # Only update current_analysis after the first search (step > 0)
             if step > 0:
                 current_analysis = analysis_match.group(1).strip()
-                write(f"[agentic_search] Step {step + 1}: Analysis updated ({len(current_analysis)} chars)")
+                log(f"[agentic_search] Step {step + 1}: Analysis updated ({len(current_analysis)} chars)")
             else:
-                write(f"[agentic_search] Step 1: Initial query understanding complete")
+                log(f"[agentic_search] Step 1: Initial query understanding complete")
             
             # Check for search queries
             search_queries_match = re.search(r'Search queries:\s*(.*)', response, re.DOTALL)
             
             # For the initial step, we expect search queries
             if step == 0 and not search_queries_match:
-                write(f"[agentic_search] Error: No search queries in initial response")
+                log(f"[agentic_search] Error: No search queries in initial response", level="error")
                 return "Error: Failed to generate initial search queries"
             
             if not search_queries_match or step == max_steps - 1:
                 # No more searches needed or reached max steps
                 if step > 0:  # Only break if we have an analysis
-                    write(f"[agentic_search] Research complete at step {step + 1}")
+                    log(f"[agentic_search] Research complete at step {step + 1}")
                     break
             
             # Extract search queries with sources
@@ -244,48 +276,69 @@ async def agentic_search(query: str) -> str:
             
             if not search_queries_with_source:
                 if step == 0:
-                    write(f"[agentic_search] Error: No valid search queries in initial response")
+                    log(f"[agentic_search] Error: No valid search queries in initial response", level="error")
                     return "Error: Failed to parse initial search queries"
                 else:
-                    write(f"[agentic_search] No new search queries, completing research")
+                    log(f"[agentic_search] No new search queries, completing research")
                     break
             
             # Limit to 5 queries and clean them up
             search_queries_with_source = [(q.strip(), source) for q, source in search_queries_with_source[:5]]
             
-            write(f"[agentic_search] Step {step + 1}: Found {len(search_queries_with_source)} search queries")
+            log(f"[agentic_search] Step {step + 1}: Found {len(search_queries_with_source)} search queries")
             # Track just the queries for deduplication
             all_search_queries.extend([q for q, _ in search_queries_with_source])
             
             # Execute searches in parallel
             search_tasks = []
+            task_sources = []
             for sq, source in search_queries_with_source:
-                write(f"[agentic_search] Searching: {sq} (Source: {source})")
-                if source in ("Google", "Google News"):
-                    search_tasks.append(
-                        google_search_agentic(
-                            sq,
-                            is_news=(source == "Google News")
+                effective_source = "Perplexity" if prefer_perplexity() else source
+                log(f"[agentic_search] Searching: {sq} (Source: {effective_source})")
+
+                if effective_source in ("Google", "Google News"):
+                    if ENABLE_SERPER and ENABLE_BRIGHT_DATA:
+                        search_tasks.append(
+                            google_search_agentic(
+                                sq,
+                                is_news=(effective_source == "Google News")
+                            )
                         )
-                    )
-                elif source == "Perplexity":
-                    search_tasks.append(call_perplexity(sq))
+                        task_sources.append((sq, effective_source))
+                    elif FALLBACK_TO_PERPLEXITY and PERPLEXITY_AVAILABLE:
+                        log(f"[agentic_search] Falling back to Perplexity for query '{sq}'")
+                        search_tasks.append(call_perplexity(sq, bucket=perplexity_bucket))
+                        task_sources.append((sq, "Perplexity"))
+                    else:
+                        msg = f"<RawContent query=\"{sq}\">Search disabled by config.</RawContent>\n"
+                        search_tasks.append(_return_immediate(msg))
+                        task_sources.append((sq, effective_source))
+                elif effective_source == "Perplexity":
+                    search_tasks.append(call_perplexity(sq, bucket=perplexity_bucket))
+                    task_sources.append((sq, "Perplexity"))
+                elif effective_source == "Assistant":
+                    search_tasks.append(call_asknews(sq))
+                    task_sources.append((sq, "Assistant"))
+                else:
+                    msg = f"<RawContent query=\"{sq}\">Unknown source '{effective_source}'.</RawContent>\n"
+                    search_tasks.append(_return_immediate(msg))
+                    task_sources.append((sq, effective_source))
             
             # Gather search results
             search_results_list = await asyncio.gather(*search_tasks, return_exceptions=True)
             
             # Format search results
             search_results = ""
-            for (sq, source), result in zip(search_queries_with_source, search_results_list):
+            for (sq, source), result in zip(task_sources, search_results_list):
                 if isinstance(result, Exception):
                     search_results += f"\nSearch query: {sq} (Source: {source})\nError: {str(result)}\n"
                 else:
                     search_results += f"\nSearch query: {sq} (Source: {source})\n{result}\n"
             
-            write(f"[agentic_search] Step {step + 1}: Search complete, {len(search_results)} chars of results")
+            log(f"[agentic_search] Step {step + 1}: Search complete, {len(search_results)} chars of results")
             
         except Exception as e:
-            write(f"[agentic_search] Error at step {step + 1}: {str(e)}")
+            log(f"[agentic_search] Error at step {step + 1}: {str(e)}", level="error")
             if current_analysis:
                 # Return what we have so far
                 break
@@ -296,10 +349,8 @@ async def agentic_search(query: str) -> str:
     steps_used = step + 1
     total_cost = calculate_cost(total_input_tokens, total_output_tokens)
     
-    print(f"\n[INFO] Agentic Search Summary:")
-    print(f"   Steps used: {steps_used}")
-    print(f"   Total tokens: {total_input_tokens + total_output_tokens:,} ({total_input_tokens:,} input + {total_output_tokens:,} output)")
-    print(f"   Estimated cost: ${total_cost:.4f}")
+    log(f"[agentic_search] Summary: steps={steps_used}, tokens={total_input_tokens + total_output_tokens:,} "
+        f"({total_input_tokens:,} input + {total_output_tokens:,} output), estimated_cost=${total_cost:.4f}")
     
     # Ensure we have an analysis to return
     if not current_analysis:
@@ -308,70 +359,35 @@ async def agentic_search(query: str) -> str:
     return current_analysis
 
 
-async def call_perplexity(prompt: str) -> str:
+async def call_perplexity(prompt: str, bucket: str | None = None) -> str:
     """
-    Async function to call Perplexity API for deep research
-    Includes retry logic and proper timeout handling
+    Async function to call Perplexity Sonar Deep Research via OpenRouter.
     """
-    url = "https://api.perplexity.ai/chat/completions"
-    payload = {
-        "model": "sonar-deep-research",
-        "messages": [
-            {
-                "role": "system",
-                "content": "Be thorough and detailed. Be objective in your analysis, proving documented facts only. Cite all sources with names and dates."
-            },
-            {
-                "role": "user",
-                "content": prompt + " Cite all sources with names and dates, compiling a list of sources at the end. Be objective in your analysis, providing documented facts only."
-            }
-        ]
-    }
-    headers = {
-        "accept": "application/json",
-        "content-type": "application/json",
-        "authorization": f"Bearer {PERPLEXITY_API_KEY}"
-    }
-
-    max_retries = 3
-    backoff_base = 3  # seconds to wait between retries
-
-    for attempt in range(1, max_retries + 1):
-        try:
-            write(f"[Perplexity API] Attempt {attempt} for query: {prompt[:50]}...")
-            async with aiohttp.ClientSession() as session:
-                timeout = aiohttp.ClientTimeout(total=800)  # 800 seconds timeout
-                async with session.post(url, json=payload, headers=headers, timeout=timeout) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        content = data['choices'][0]['message']['content']
-                        content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL)
-                        write(f"[Perplexity API] [OK] Success on attempt {attempt}")
-                        return content.strip()
-                    else:
-                        response_text = await response.text()
-                        write(f"[Perplexity API] [ERROR] Error: HTTP {response.status}: {response_text}")
-                        # Continue to retry on non-200 response
-                        
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            write(f"[Perplexity API] [WARN] Attempt {attempt} failed: {e}")
-        
-        # Only enter retry logic if not on last attempt
-        if attempt < max_retries:
-            wait_time = backoff_base * attempt
-            write(f"[Perplexity API] [RETRY] Retrying in {wait_time} seconds...")
-            await asyncio.sleep(wait_time)
-        else:
-            write(f"[Perplexity API] [ERROR] Max retries ({max_retries}) reached. Giving up.")
-            return f"Error: Perplexity API failed after {max_retries} attempts. The system will continue with other available data."
-
-    # Should never reach here
-    return "Unexpected error in call_perplexity"
+    if not PERPLEXITY_AVAILABLE:
+        return "Error: Perplexity disabled or missing API key."
+    if not _consume_perplexity_budget(bucket):
+        return "Error: Perplexity call limit reached for this run."
+    try:
+        return await call_openrouter_gpt(
+            prompt + PERPLEXITY_DEEP_RESEARCH_USER_SUFFIX,
+            model="perplexity/sonar-deep-research",
+            max_tokens=8000,
+        )
+    except Exception as e:
+        log(f"[Perplexity API] [ERROR] {e}", level="error")
+        return f"Error: Perplexity API via OpenRouter failed: {e}"
 
 async def google_search(query, is_news=False, date_before=None):
     original_query = query
     query = query.replace('"', '').replace("'", '').strip()
-    write(f"[google_search] Cleaned query: '{query}' (original: '{original_query}') | is_news={is_news}, date_before={date_before}")
+    log(f"[google_search] Cleaned query: '{query}' (original: '{original_query}') | is_news={is_news}, date_before={date_before}")
+    
+    if not ENABLE_SERPER:
+        log("[google_search] [WARN] Serper/Google search disabled by config")
+        return []
+    if not SERPER_KEY:
+        log("[google_search] [ERROR] SERPER_KEY not set; skipping search", level="error")
+        return []
     
     search_type = "news" if is_news else "search"
     url = f"https://google.serper.dev/{search_type}"
@@ -391,7 +407,7 @@ async def google_search(query, is_news=False, date_before=None):
                 if response.status == 200:
                     data = await response.json()
                     items = data.get('news' if is_news else 'organic', [])
-                    write(f"[google_search] Found {len(items)} raw results")
+                    log(f"[google_search] Found {len(items)} raw results")
 
                     filtered_items = []
                     for item in items:
@@ -400,55 +416,59 @@ async def google_search(query, is_news=False, date_before=None):
                         item_date = parse_date(item_date_str)
                         if date_before:
                             if item_date != "Unknown" and validate_time(date_before, item_date):
-                                write(f"[google_search] [OK] Keeping: {item_url} (date: {item_date})")
+                                log(f"[google_search] [OK] Keeping: {item_url} (date: {item_date})")
                                 filtered_items.append(item)
                             else:
-                                write(f"[google_search] [SKIP] Dropped by date: {item_url} (date: {item_date})")
+                                log(f"[google_search] [SKIP] Dropped by date: {item_url} (date: {item_date})")
                         else:
-                            write(f"[google_search] [OK] Keeping: {item_url}")
+                            log(f"[google_search] [OK] Keeping: {item_url}")
                             filtered_items.append(item)
 
                         if len(filtered_items) >=12:
                             break
                     
                     urls = [item['link'] for item in filtered_items]
-                    write(f"[google_search] Returning {len(urls)} URLs: {urls}")
+                    log(f"[google_search] Returning {len(urls)} URLs: {urls}")
                     return urls
                 else:
-                    write(f"[google_search] Error in Serper API response: Status {response.status}")
+                    log(f"[google_search] Error in Serper API response: Status {response.status}")
                     response.raise_for_status()
     except Exception as e:
-        write(f"[google_search] Exception: {str(e)}")
+        log(f"[google_search] Exception: {str(e)}")
         raise
 
 
 async def call_gpt(prompt, step=1):
-    client = OpenAI(api_key=OPENAI_API_KEY)
-
+    """
+    Convenience wrapper around OpenRouter GPT models for research prompts.
+    """
     try:
-        response = client.responses.create(
-            model="o3",
-            input=prompt
-        )
-        return response.output_text
+        return await call_openrouter_gpt(prompt, model="openai/o3-mini", max_tokens=8000)
     except Exception as e:
-        write(f"[call_gpt] Error: {str(e)}")
-        return f"Error calling OpenAI API: {str(e)}"
+        log(f"[call_gpt] Error: {str(e)}")
+        return f"Error calling OpenRouter API: {str(e)}"
 
 
 async def google_search_and_scrape(query, is_news, question_details, date_before=None):
-    write(f"[google_search_and_scrape] Called with query='{query}', is_news={is_news}, date_before={date_before}")
+    log(f"[google_search_and_scrape] Called with query='{query}', is_news={is_news}, date_before={date_before}")
     try:
+        if not ENABLE_BRIGHT_DATA:
+            log("[google_search_and_scrape] [WARN] Bright Data scraping disabled by config")
+            return f"<Summary query=\"{query}\">Scraping disabled by config.</Summary>\n"
+
         urls = await google_search(query, is_news, date_before)
 
         if not urls:
-            write(f"[google_search_and_scrape] [ERROR] No URLs returned for query: '{query}'")
+            log(f"[google_search_and_scrape] [ERROR] No URLs returned for query: '{query}'")
             return f"<Summary query=\"{query}\">No URLs returned from Google.</Summary>\n"
+        # track attempted urls for serper stats
+        logger = get_current_logger()
+        logger.log(f"[serper_urls] attempted={len(urls)} success=0")
 
         async with FastContentExtractor() as extractor:
-            write(f"[google_search_and_scrape] [INFO] Starting content extraction for {len(urls)} URLs")
+            log(f"[google_search_and_scrape] [INFO] Starting content extraction for {len(urls)} URLs")
             results = await extractor.extract_content(urls)
-            write(f"[google_search_and_scrape] [OK] Finished content extraction")
+            log(f"[google_search_and_scrape] [OK] Finished content extraction")
 
         summarize_tasks = []
         no_results = 3
@@ -458,37 +478,42 @@ async def google_search_and_scrape(query, is_news, question_details, date_before
                 break  
             content = (data.get('content') or '').strip()
             if len(content.split()) < 100:
-                write(f"[google_search_and_scrape] [WARN] Skipping low-content article: {url}")
+                log(f"[google_search_and_scrape] [WARN] Skipping low-content article: {url}")
                 continue
             if content:
                 truncated = content[:8000]
-                write(f"[google_search_and_scrape] [TRUNC] Truncated content for summarization: {len(truncated)} chars from {url}")
+                log(f"[google_search_and_scrape] [TRUNC] Truncated content for summarization: {len(truncated)} chars from {url}")
                 summarize_tasks.append(
                     asyncio.create_task(summarize_article(truncated, question_details))
                 )
                 valid_urls.append(url)
             else:
-                write(f"[google_search_and_scrape] [WARN] No content for {url}, skipping summarization.")
+                log(f"[google_search_and_scrape] [WARN] No content for {url}, skipping summarization.")
 
         if not summarize_tasks:
-            write("[google_search_and_scrape] [WARN] Warning: No content to summarize")
+            log("[google_search_and_scrape] [WARN] Warning: No content to summarize")
             return f"<Summary query=\"{query}\">No usable content extracted from any URL.</Summary>\n"
 
         summaries = await asyncio.gather(*summarize_tasks, return_exceptions=True)
 
         output = ""
+        success_count = 0
         for url, summary in zip(valid_urls, summaries):
             if isinstance(summary, Exception):
-                write(f"[google_search_and_scrape] [ERROR] Error summarizing {url}: {summary}")
+                log(f"[google_search_and_scrape] [ERROR] Error summarizing {url}: {summary}")
                 output += f"\n<Summary source=\"{url}\">\nError summarizing content: {str(summary)}\n</Summary>\n"
             else:
+                success_count += 1
                 output += f"\n<Summary source=\"{url}\">\n{summary}\n</Summary>\n"
+
+        # update serper success stats
+        logger.log(f"[serper_urls] attempted=0 success={success_count}")
 
         return output
     except Exception as e:
-        write(f"[google_search_and_scrape] Error: {str(e)}")
+        log(f"[google_search_and_scrape] Error: {str(e)}")
         traceback_str = traceback.format_exc()
-        write(f"Traceback: {traceback_str}")
+        log(f"Traceback: {traceback_str}")
         return f"<Summary query=\"{query}\">Error during search and scrape: {str(e)}</Summary>\n"
     
 
@@ -504,18 +529,22 @@ async def google_search_agentic(query, is_news=False):
     Returns:
         Formatted string with raw article contents
     """
-    write(f"[google_search_agentic] Called with query='{query}', is_news={is_news}")
+    log(f"[google_search_agentic] Called with query='{query}', is_news={is_news}")
     try:
+        if not ENABLE_BRIGHT_DATA:
+            log("[google_search_agentic] [WARN] Bright Data scraping disabled by config")
+            return f"<RawContent query=\"{query}\">Scraping disabled by config.</RawContent>\n"
+
         urls = await google_search(query, is_news)
 
         if not urls:
-            write(f"[google_search_agentic] [ERROR] No URLs returned for query: '{query}'")
+            log(f"[google_search_agentic] [ERROR] No URLs returned for query: '{query}'")
             return f"<RawContent query=\"{query}\">No URLs returned from Google.</RawContent>\n"
 
         async with FastContentExtractor() as extractor:
-            write(f"[google_search_agentic] [INFO] Starting content extraction for {len(urls)} URLs")
+            log(f"[google_search_agentic] [INFO] Starting content extraction for {len(urls)} URLs")
             results = await extractor.extract_content(urls)
-            write(f"[google_search_agentic] [OK] Finished content extraction")
+            log(f"[google_search_agentic] [OK] Finished content extraction")
 
         output = ""
         no_results = 3
@@ -527,33 +556,33 @@ async def google_search_agentic(query, is_news=False):
                 
             content = (data.get('content') or '').strip()
             if len(content.split()) < 100:
-                write(f"[google_search_agentic] [WARN] Skipping low-content article: {url}")
+                log(f"[google_search_agentic] [WARN] Skipping low-content article: {url}")
                 continue
                 
             if content:
                 truncated = content[:8000]
-                write(f"[google_search_agentic] [TRUNC] Including content: {len(truncated)} chars from {url}")
+                log(f"[google_search_agentic] [TRUNC] Including content: {len(truncated)} chars from {url}")
                 output += f"\n<RawContent source=\"{url}\">\n{truncated}\n</RawContent>\n"
                 results_count += 1
             else:
-                write(f"[google_search_agentic] [WARN] No content for {url}, skipping.")
+                log(f"[google_search_agentic] [WARN] No content for {url}, skipping.")
 
         if not output:
-            write("[google_search_agentic] [WARN] Warning: No usable content found")
+            log("[google_search_agentic] [WARN] Warning: No usable content found")
             return f"<RawContent query=\"{query}\">No usable content extracted from any URL.</RawContent>\n"
 
         return output
         
     except Exception as e:
-        write(f"[google_search_agentic] Error: {str(e)}")
+        log(f"[google_search_agentic] Error: {str(e)}")
         import traceback
         traceback_str = traceback.format_exc()
-        write(f"Traceback: {traceback_str}")
+        log(f"Traceback: {traceback_str}")
         return f"<RawContent query=\"{query}\">Error during search: {str(e)}</RawContent>\n"
 
 
 
-async def process_search_queries(response: str, forecaster_id: str, question_details: dict):
+async def process_search_queries(response: str, forecaster_id: str, question_details: dict, perplexity_bucket: str | None = None):
     """
     Parses out search queries from the forecaster's response, executes them
     (AskNews, Agent or Google/Google News), and returns formatted summaries.
@@ -563,7 +592,7 @@ async def process_search_queries(response: str, forecaster_id: str, question_det
         # 1) Extract the "Search queries:" block
         search_queries_block = re.search(r'(?:Search queries:)(.*)', response, re.DOTALL | re.IGNORECASE)
         if not search_queries_block:
-            write(f"Forecaster {forecaster_id}: No search queries block found")
+            log(f"Forecaster {forecaster_id}: No search queries block found")
             return ""
 
         queries_text = search_queries_block.group(1).strip()
@@ -582,14 +611,15 @@ async def process_search_queries(response: str, forecaster_id: str, question_det
             )
 
         if not search_queries:
-            write(f"Forecaster {forecaster_id}: No valid search queries found:\n{queries_text}")
+            log(f"Forecaster {forecaster_id}: No valid search queries found:\n{queries_text}")
             return ""
 
-        write(f"Forecaster {forecaster_id}: Processing {len(search_queries)} search queries")
+        log(f"Forecaster {forecaster_id}: Processing {len(search_queries)} search queries")
 
         # 4) Kick off one asyncio task per query
         tasks = []
         query_sources = []  # Track which source goes with which task
+        formatted_results = ""
         
         for match in search_queries:
             # match can be ("\"text\"", "text", "Source") or ("text", "Source")
@@ -602,40 +632,55 @@ async def process_search_queries(response: str, forecaster_id: str, question_det
             if not query:
                 continue
 
-            write(f"Forecaster {forecaster_id}: Query='{query}' Source={source}")
-            query_sources.append((query, source))
+            effective_source = "Perplexity" if prefer_perplexity() else source
+            log(f"Forecaster {forecaster_id}: Query='{query}' Source={effective_source}")
 
-            if source in ("Google", "Google News"):
-                # pass question_details through so summarizer can fill the prompt
-                tasks.append(
-                    google_search_and_scrape(
-                        query,
-                        is_news=(source == "Google News"),
-                        question_details=question_details,
-                        date_before=question_details.get("resolution_date")
+            if effective_source in ("Google", "Google News"):
+                if ENABLE_SERPER and ENABLE_BRIGHT_DATA:
+                    tasks.append(
+                        google_search_and_scrape(
+                            query,
+                            is_news=(effective_source == "Google News"),
+                            question_details=question_details,
+                            date_before=question_details.get("resolution_date")
+                        )
                     )
-                )
-            elif source == "Assistant":
-                tasks.append(call_asknews(query))
-            elif source == "Agent":
-                tasks.append(agentic_search(query))
-            elif source == "Perplexity":
-                tasks.append(call_perplexity(query))
+                    query_sources.append((query, effective_source))
+                elif FALLBACK_TO_PERPLEXITY and PERPLEXITY_AVAILABLE:
+                    log(f"Forecaster {forecaster_id}: Falling back to Perplexity for '{query}'")
+                    tasks.append(call_perplexity(query))
+                    query_sources.append((query, "Perplexity"))
+                else:
+                    formatted_results += f"\n<Summary query=\"{query}\">Search disabled by config.</Summary>\n"
+            elif effective_source == "Assistant":
+                if ENABLE_ASKNEWS:
+                    tasks.append(call_asknews(query))
+                    query_sources.append((query, "Assistant"))
+                elif FALLBACK_TO_PERPLEXITY and PERPLEXITY_AVAILABLE:
+                    log(f"Forecaster {forecaster_id}: Falling back to Perplexity for '{query}' (AskNews disabled)")
+                    tasks.append(call_perplexity(query))
+                    query_sources.append((query, "Perplexity"))
+                else:
+                    formatted_results += f"\n<Asknews_articles>\nQuery: {query}\nAskNews disabled by config.\n</Asknews_articles>\n"
+            elif effective_source == "Agent":
+                tasks.append(agentic_search(query, perplexity_bucket=perplexity_bucket))
+                query_sources.append((query, "Agent"))
+            elif effective_source == "Perplexity":
+                tasks.append(call_perplexity(query, bucket=perplexity_bucket))
+                query_sources.append((query, "Perplexity"))
 
         if not tasks:
-            write(f"Forecaster {forecaster_id}: No tasks generated")
-            return ""
+            log(f"Forecaster {forecaster_id}: No tasks generated")
+            return formatted_results
 
         # 5) Await all tasks
-        formatted_results = ""
-        
         # First gather with return_exceptions=True to prevent one failure from breaking everything
         results = await asyncio.gather(*tasks, return_exceptions=True)
             
         # 6) Format the outputs
         for (query, source), result in zip(query_sources, results):
             if isinstance(result, Exception):
-                write(f"[process_search_queries] [ERROR] Forecaster {forecaster_id}: Error for '{query}' -> {str(result)}")
+                log(f"[process_search_queries] [ERROR] Forecaster {forecaster_id}: Error for '{query}' -> {str(result)}")
                 # Add a message about the error in the formatted results
                 if source == "Assistant":
                     formatted_results += f"\n<Asknews_articles>\nQuery: {query}\nError retrieving results: {str(result)}\n</Asknews_articles>\n"
@@ -644,7 +689,7 @@ async def process_search_queries(response: str, forecaster_id: str, question_det
                 else:
                     formatted_results += f"\n<Summary query=\"{query}\">\nError retrieving results: {str(result)}\n</Summary>\n"
             else:
-                write(f"[process_search_queries] [OK] Forecaster {forecaster_id}: Query '{query}' processed successfully.")
+                log(f"[process_search_queries] [OK] Forecaster {forecaster_id}: Query '{query}' processed successfully.")
                 
                 if source == "Assistant":
                     formatted_results += f"\n<Asknews_articles>\nQuery: {query}\n{result}</Asknews_articles>\n"
@@ -657,9 +702,9 @@ async def process_search_queries(response: str, forecaster_id: str, question_det
         return formatted_results
 
     except Exception as e:
-        write(f"Forecaster {forecaster_id}: Error processing search queries: {str(e)}")
+        log(f"Forecaster {forecaster_id}: Error processing search queries: {str(e)}")
         import traceback
-        write(f"Traceback: {traceback.format_exc()}")
+        log(f"Traceback: {traceback.format_exc()}")
         # Return what we have so far instead of nothing
         return "Error processing some search queries. Partial results may be available."
 
