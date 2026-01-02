@@ -1256,3 +1256,14 @@ Use the following verification checklist at the end of your response
 4. All queries followed by either (Google), (Google News) in brackets () on the same line as the query?
 
 """
+
+# Critique/debate scaffold (JSON-friendly)
+CRITIQUE_PROMPT = """You are a critical reviewer for a forecast.
+Probability (0-1): {probability}
+Rationale:
+{rationale}
+Evidence summary:
+{evidence}
+
+Respond with compact JSON: {{"critique": "<issues and missing evidence>", "suggested_probability": <float between 0 and 1>}}.
+If you cannot judge, set suggested_probability to null."""

@@ -5,8 +5,11 @@ import os
 import re
 import dotenv
 dotenv.load_dotenv()
+from config import load_run_config
 from forecaster import binary_forecast, numeric_forecast, multiple_choice_forecast
+from logging_utils import RunLogger, get_current_logger, set_current_logger
 from prompts import FORECAST_COMMENT_SUMMARY_PROMPT
+from run_metadata import collect_runtime_metadata, write_metadata
 
 import numpy as np
 import requests
@@ -21,9 +24,13 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # Constants
 SUBMIT_PREDICTION = True  # set to True to publish your predictions to Metaculus
 USE_EXAMPLE_QUESTIONS = False # set to True to forecast example questions rather than the tournament questions
-NUM_RUNS_PER_QUESTION = 5  # The median forecast is taken between NUM_RUNS_PER_QUESTION runs
+NUM_RUNS_PER_QUESTION = int(os.getenv("NUM_RUNS_PER_QUESTION", "5"))  # median over runs
 SKIP_PREVIOUSLY_FORECASTED_QUESTIONS = True
 RUN = True
+# Tournament guardrail: single-shot submissions unless explicitly overridden
+TOURNAMENT_SINGLE_SHOT = os.getenv("TOURNAMENT_SINGLE_SHOT", "true").strip().lower() in {"1", "true", "yes", "on"}
+if TOURNAMENT_SINGLE_SHOT and NUM_RUNS_PER_QUESTION != 1:
+    NUM_RUNS_PER_QUESTION = 1
 
 # Environment variables
 # You only need *either* Exa or Perplexity or AskNews keys for online research
@@ -350,18 +357,43 @@ async def forecast_questions(
 
 ######################## FINAL RUN #########################
 if __name__ == "__main__":
+    run_config = load_run_config()
+    run_logger = RunLogger(echo_errors=True, echo_probabilities=True, echo_info=False)
+    previous_logger = get_current_logger()
+    set_current_logger(run_logger)
+    run_started = datetime.datetime.utcnow().isoformat() + "Z"
+    open_question_id_post_id: list[tuple[int, int]] = []
     if not RUN:
         exit()
-    if USE_EXAMPLE_QUESTIONS:
-        open_question_id_post_id = EXAMPLE_QUESTIONS
-    else:
-        open_question_id_post_id = get_open_question_ids_from_tournament()
+    try:
+        if USE_EXAMPLE_QUESTIONS:
+            open_question_id_post_id = EXAMPLE_QUESTIONS
+        else:
+            open_question_id_post_id = get_open_question_ids_from_tournament()
 
-    asyncio.run(
-        forecast_questions(
-            open_question_id_post_id,
-            SUBMIT_PREDICTION,
-            NUM_RUNS_PER_QUESTION,
-            SKIP_PREVIOUSLY_FORECASTED_QUESTIONS,
+        asyncio.run(
+            forecast_questions(
+                open_question_id_post_id,
+                SUBMIT_PREDICTION,
+                NUM_RUNS_PER_QUESTION,
+                SKIP_PREVIOUSLY_FORECASTED_QUESTIONS,
+            )
         )
-    )
+    finally:
+        set_current_logger(previous_logger)
+        metadata = collect_runtime_metadata(
+            run_kind="metaculus_tournament",
+            run_config=run_config,
+            question={
+                "tournament_id": TOURNAMENT_ID,
+                "question_count": len(open_question_id_post_id),
+            },
+            logger=run_logger,
+            extra={"started_at_utc": run_started, "output_dir": OUTPUT_DIR},
+        )
+        meta_dir = os.path.join(OUTPUT_DIR, "run_metadata")
+        os.makedirs(meta_dir, exist_ok=True)
+        meta_path = os.path.join(
+            meta_dir, f"run_{datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}.json"
+        )
+        write_metadata(meta_path, metadata)

@@ -5,7 +5,7 @@ A multi-agent forecasting system for Metaculus and ad-hoc questions. It combines
 ## What it does
 - Forecasts binary, numeric, and multiple-choice questions.
 - Runs historical + current search, outside-view + inside-view prompt phases, and aggregates 5 forecaster models (OpenRouter-only).
-- Supports Metaculus tournament automation (`Bot/main.py`), interactive custom questions (`Bot/custom_forecast.py`), and a Polymarket benchmark harness.
+- Supports Metaculus tournament automation (`Bot/main.py`), interactive custom questions (`Bot/custom_forecast.py`), offline baseline snapshots, and replay-mode benchmarks.
 
 ## Documentation
 - `CODE_INDEX.md` - File map and entry points.
@@ -77,21 +77,29 @@ Write result to custom_forecasts/<run-id>/
   cd Bot
   python custom_forecast.py
   ```
-- **Polymarket benchmark (5 binary markets scored vs. market odds)**:
+- **Baseline snapshot (offline, uses replay fixtures)**:
   ```bash
   cd Bot
-  python custom_forecast.py --benchmark
-  # edit Bot/polymarket_benchmark.py to update the 5 questions + probabilities
+  python custom_forecast.py --baseline-snapshot
   ```
-  Outputs are written to `custom_forecasts/polymarket_benchmark_<timestamp>/` with:
-  - `summary.txt` and `summary.json` (overall scores + per-question stats)
-  - `questions/` (one markdown file per question with raw forecaster outputs)
-  - `scores_by_forecaster.csv` (per-question, per-forecaster probabilities/weights)
-  - `errors.txt` (any contamination/missing forecasts)
+  Writes `custom_forecasts/baseline_<timestamp>/` with per-question outputs + metadata.
+- **Benchmark runner (replay-friendly)**:
+  ```bash
+  cd Bot
+  python custom_forecast.py --benchmark                  # defaults to benchmarks/questions.jsonl
+  python custom_forecast.py --benchmark path/to/file.jsonl
+  ```
+  Outputs are written to `benchmarks/runs/run_<timestamp>/` with per-question logs and `summary.json`.
 - **Metaculus tournament run**:
   ```bash
   cd Bot
-  python main.py
+  python main.py   # defaults to single-shot submissions (TOURNAMENT_SINGLE_SHOT=true)
+  ```
+- **Diagnostics / key check**:
+  ```bash
+  cd Bot
+  python custom_forecast.py --diagnostics           # env/flag snapshot
+  python custom_forecast.py --diagnostics --diagnostics-live  # add lightweight API pings
   ```
 - **UI viewer (prompts, agents, benchmark lane)**:
   ```bash
@@ -107,7 +115,10 @@ Write result to custom_forecasts/<run-id>/
 - **Forecasters**: `binary.py`, `numeric.py`, `multiple_choice.py` orchestrate outside/inside prompts and the ensemble.
 
 ## Troubleshooting
-- Missing API key → check `.env` in `Bot/`.
-- Empty outputs → ensure search keys (SERPER/Perplexity/AskNews) are present.
-- Rate limits → lower concurrency or swap to cheaper models in `model_config.py`.
-- OpenRouter errors → confirm `OPENROUTER_API_KEY` and that model names match `model_config.py`.
+- Missing API key -> populate `OPENROUTER_API_KEY` (LLMs), `SERPER_KEY` (Google), `ASKNEWS_CLIENT_ID`/`ASKNEWS_SECRET` (news), `METACULUS_TOKEN` (proxy). Disable a provider with `ENABLE_SERPER=false`, `ENABLE_ASKNEWS=false`, etc. Fallbacks to Perplexity trigger warnings instead of hard failures; provider status is logged once per run.
+- Empty/slow outputs -> ensure search keys are present; if unavailable, set `FALLBACK_TO_PERPLEXITY=true` and cap `PERPLEXITY_CALL_LIMIT` to keep runs cheap. Evidence lake writes can be disabled with `ENABLE_EVIDENCE_LAKE=0`.
+- Rate limits / bad models -> lower concurrency or switch to cheaper models in `Bot/model_config.py`; most calls route through OpenRouter (no `OPENAI_API_KEY` is used). Multi-sampling/aggregation knobs live in `Bot/config.py` (`FORECAST_RUNS_PER_MODEL`, `AGGREGATION_MODE`, probability caps).
+- Diagnostics -> `python Bot/custom_forecast.py --diagnostics` (add `--diagnostics-live` for lightweight API pings) to see key presence + provider enablement. Provider status is also logged once per run.
+- Evidence lake -> enable with `ENABLE_EVIDENCE_LAKE=1`; defaults to file-based JSON + `index.jsonl`, optional SQLite backend via `EVIDENCE_LAKE_BACKEND=sqlite`.
+- Tests -> install deps, run `pytest -q`; contract/API tests stay skipped unless `RUN_CONTRACT_TESTS=1` is set with valid keys. CI runs offline tests and optional contract tests when `OPENROUTER_API_KEY` is present.
+- Tournament guardrails -> `Bot/main.py` defaults to single-shot submissions (`TOURNAMENT_SINGLE_SHOT=true`) and caps reruns with `NUM_RUNS_PER_QUESTION`; keep `SKIP_PREVIOUSLY_FORECASTED_QUESTIONS=true` to avoid duplicates.

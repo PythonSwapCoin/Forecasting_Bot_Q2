@@ -14,6 +14,7 @@ from research_config import (
     ENABLE_SERPER,
     FALLBACK_TO_PERPLEXITY,
     PERPLEXITY_CALL_LIMIT,
+    get_research_provider_status,
     prefer_perplexity,
 )
 from prompts import (
@@ -38,6 +39,13 @@ import time
 import traceback
 from llm_calls import call_openrouter_gpt
 from logging_utils import get_current_logger
+from evidence import EvidenceItem, ResearchResult
+from evidence_store import persist_research_report, persist_research_result
+from replay import make_replay_key, maybe_replay_search, record_search_result
+from research_metrics import canonicalize_url, compute_quality_score, compute_retrieval_kpis, hash_snippet
+from fact_extraction import extract_fact_candidates
+from datetime import datetime, timezone
+from search_plan import build_search_plan, formalize_question
 load_dotenv()
 
 SERPER_KEY = os.getenv("SERPER_KEY")
@@ -49,6 +57,7 @@ METACULUS_TOKEN = os.getenv("METACULUS_TOKEN")
 PERPLEXITY_AVAILABLE = bool(OPENROUTER_API_KEY) and ENABLE_PERPLEXITY
 
 _perplexity_budget = {"historical": 0, "current": 0, "shared": 0}
+_provider_status_logged = False
 
 
 def reset_perplexity_budget(pairs: int | None = None) -> None:
@@ -86,6 +95,84 @@ def _consume_perplexity_budget(bucket: str | None) -> bool:
     _perplexity_budget[use_bucket] -= 1
     return True
 
+
+def _log_provider_status_once() -> None:
+    """Log provider availability once per process to aid debugging."""
+    global _provider_status_logged
+    if _provider_status_logged:
+        return
+    status = get_research_provider_status()
+    log(f"[provider_status] {status}", level="info")
+    _provider_status_logged = True
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _extract_first_url(text: str) -> str | None:
+    match = re.search(r"https?://[^\s>\"']+", text or "")
+    return match.group(0) if match else None
+
+
+def _make_evidence_item(
+    provider: str,
+    query: str,
+    snippet: str | None,
+    *,
+    query_intent: str | None = None,
+    url: str | None = None,
+    title: str | None = None,
+    published_at: str | None = None,
+    metadata: dict | None = None,
+) -> EvidenceItem:
+    item = EvidenceItem(
+        provider=provider,
+        query=query,
+        query_intent=query_intent,
+        url=url,
+        title=title or (snippet.splitlines()[0][:120] if snippet else query),
+        snippet=snippet,
+        published_at=published_at,
+        retrieved_at=_now_iso(),
+        content_hash=hash_snippet(snippet) or hash_snippet(url or query),
+        metadata=metadata or {},
+    )
+    item.quality_score = compute_quality_score(item)
+    return item
+
+
+def _dedup_evidence_items(evidence: list[EvidenceItem]) -> list[EvidenceItem]:
+    seen_hash: set[str] = set()
+    seen_url: set[str] = set()
+    deduped: list[EvidenceItem] = []
+    for item in evidence:
+        canon = canonicalize_url(item.url)
+        if item.content_hash and item.content_hash in seen_hash:
+            continue
+        if canon and canon in seen_url:
+            continue
+        if item.content_hash:
+            seen_hash.add(item.content_hash)
+        if canon:
+            seen_url.add(canon)
+        deduped.append(item)
+    return deduped
+
+
+def _summarize_evidence_items(evidence: list[EvidenceItem]) -> str:
+    if not evidence:
+        return "No evidence collected."
+    lines = []
+    for ev in evidence[:8]:
+        parts = [
+            ev.title or ev.query,
+            ev.url or "no-url",
+            f"provider={ev.provider}",
+        ]
+        lines.append("- " + " | ".join(parts))
+    return "Evidence summary:\n" + "\n".join(lines)
+
 def log(message: str, level: str = "info") -> None:
     logger = get_current_logger()
     logger.log(message, level=level)
@@ -121,9 +208,9 @@ async def call_asknews(question: str) -> str:
     The full API reference can be found here: https://docs.asknews.app/en/reference#get-/v1/news/search
     """
     if not ENABLE_ASKNEWS:
-        return "AskNews disabled by config."
+        return {"formatted": "AskNews disabled by config.", "evidence": []}
     if not ASKNEWS_CLIENT_ID or not ASKNEWS_SECRET:
-        return "AskNews disabled (no credentials provided)."
+        return {"formatted": "AskNews disabled (no credentials provided).", "evidence": []}
     try:
         ask = AskNewsSDK(
             client_id=ASKNEWS_CLIENT_ID, client_secret=ASKNEWS_SECRET, scopes=set(["news"])
@@ -150,6 +237,7 @@ async def call_asknews(question: str) -> str:
         hot_articles = hot_response.as_dicts
         historical_articles = historical_response.as_dicts
         formatted_articles = "Here are the relevant news articles:\n\n"
+        evidence_items: list[EvidenceItem] = []
 
         if hot_articles:
             hot_articles = [article.__dict__ for article in hot_articles]
@@ -158,6 +246,17 @@ async def call_asknews(question: str) -> str:
             for article in hot_articles:
                 pub_date = article["pub_date"].strftime("%B %d, %Y %I:%M %p")
                 formatted_articles += f"**{article['eng_title']}**\n{article['summary']}\nOriginal language: {article['language']}\nPublish date: {pub_date}\nSource:[{article['source_id']}]({article['article_url']})\n\n"
+                evidence_items.append(
+                    _make_evidence_item(
+                        provider="asknews",
+                        query=question,
+                        snippet=article["summary"],
+                        url=article["article_url"],
+                        title=article["eng_title"],
+                        published_at=article["pub_date"].isoformat() if article.get("pub_date") else None,
+                        metadata={"language": article["language"], "source_id": article["source_id"]},
+                    )
+                )
 
         if historical_articles:
             historical_articles = [article.__dict__ for article in historical_articles]
@@ -168,15 +267,26 @@ async def call_asknews(question: str) -> str:
             for article in historical_articles:
                 pub_date = article["pub_date"].strftime("%B %d, %Y %I:%M %p")
                 formatted_articles += f"**{article['eng_title']}**\n{article['summary']}\nOriginal language: {article['language']}\nPublish date: {pub_date}\nSource:[{article['source_id']}]({article['article_url']})\n\n"
+                evidence_items.append(
+                    _make_evidence_item(
+                        provider="asknews",
+                        query=question,
+                        snippet=article["summary"],
+                        url=article["article_url"],
+                        title=article["eng_title"],
+                        published_at=article["pub_date"].isoformat() if article.get("pub_date") else None,
+                        metadata={"language": article["language"], "source_id": article["source_id"]},
+                    )
+                )
 
         if not hot_articles and not historical_articles:
             formatted_articles += "No articles were found.\n\n"
-            return formatted_articles
+            return {"formatted": formatted_articles, "evidence": evidence_items}
 
-        return formatted_articles
+        return {"formatted": formatted_articles, "evidence": evidence_items}
     except Exception as e:
         log(f"[call_asknews] Error: {str(e)}", level="error")
-        return f"Error retrieving news articles: {str(e)}"
+        return {"formatted": f"Error retrieving news articles: {str(e)}", "evidence": []}
     
 
 async def agentic_search(query: str, perplexity_bucket: str | None = None) -> str:
@@ -333,7 +443,8 @@ async def agentic_search(query: str, perplexity_bucket: str | None = None) -> st
                 if isinstance(result, Exception):
                     search_results += f"\nSearch query: {sq} (Source: {source})\nError: {str(result)}\n"
                 else:
-                    search_results += f"\nSearch query: {sq} (Source: {source})\n{result}\n"
+                    formatted = result.get("formatted") if isinstance(result, dict) else result
+                    search_results += f"\nSearch query: {sq} (Source: {source})\n{formatted}\n"
             
             log(f"[agentic_search] Step {step + 1}: Search complete, {len(search_results)} chars of results")
             
@@ -414,22 +525,27 @@ async def google_search(query, is_news=False, date_before=None):
                         item_url = item.get('link')
                         item_date_str = item.get('date', '')
                         item_date = parse_date(item_date_str)
+                        keep = True
                         if date_before:
-                            if item_date != "Unknown" and validate_time(date_before, item_date):
-                                log(f"[google_search] [OK] Keeping: {item_url} (date: {item_date})")
-                                filtered_items.append(item)
-                            else:
-                                log(f"[google_search] [SKIP] Dropped by date: {item_url} (date: {item_date})")
+                            keep = item_date != "Unknown" and validate_time(date_before, item_date)
+                        if keep:
+                            log(f"[google_search] [OK] Keeping: {item_url} (date: {item_date})")
+                            filtered_items.append(
+                                {
+                                    "url": item_url,
+                                    "title": item.get("title") or item.get("snippet") or item_url,
+                                    "snippet": item.get("snippet", ""),
+                                    "published_at": item_date if item_date != "Unknown" else None,
+                                    "source": item.get("source") or ("news" if is_news else "web"),
+                                }
+                            )
                         else:
-                            log(f"[google_search] [OK] Keeping: {item_url}")
-                            filtered_items.append(item)
-
-                        if len(filtered_items) >=12:
+                            log(f"[google_search] [SKIP] Dropped by date: {item_url} (date: {item_date})")
+                        if len(filtered_items) >= 12:
                             break
-                    
-                    urls = [item['link'] for item in filtered_items]
-                    log(f"[google_search] Returning {len(urls)} URLs: {urls}")
-                    return urls
+
+                    log(f"[google_search] Returning {len(filtered_items)} results")
+                    return filtered_items
                 else:
                     log(f"[google_search] Error in Serper API response: Status {response.status}")
                     response.raise_for_status()
@@ -454,51 +570,61 @@ async def google_search_and_scrape(query, is_news, question_details, date_before
     try:
         if not ENABLE_BRIGHT_DATA:
             log("[google_search_and_scrape] [WARN] Bright Data scraping disabled by config")
-            return f"<Summary query=\"{query}\">Scraping disabled by config.</Summary>\n"
+            return {"formatted": f"<Summary query=\"{query}\">Scraping disabled by config.</Summary>\n", "evidence": []}
 
-        urls = await google_search(query, is_news, date_before)
+        search_results = await google_search(query, is_news, date_before)
 
-        if not urls:
+        if not search_results:
             log(f"[google_search_and_scrape] [ERROR] No URLs returned for query: '{query}'")
-            return f"<Summary query=\"{query}\">No URLs returned from Google.</Summary>\n"
+            return {"formatted": f"<Summary query=\"{query}\">No URLs returned from Google.</Summary>\n", "evidence": []}
         # track attempted urls for serper stats
         logger = get_current_logger()
-        logger.log(f"[serper_urls] attempted={len(urls)} success=0")
+        logger.log(f"[serper_urls] attempted={len(search_results)} success=0")
 
+        urls = [item.get("url") for item in search_results if item.get("url")]
         async with FastContentExtractor() as extractor:
             log(f"[google_search_and_scrape] [INFO] Starting content extraction for {len(urls)} URLs")
             results = await extractor.extract_content(urls)
             log(f"[google_search_and_scrape] [OK] Finished content extraction")
 
-        summarize_tasks = []
+        summarize_tasks: list[asyncio.Task] = []
         no_results = 3
         valid_urls = []
+        evidences: list[EvidenceItem] = []
+
         for url, data in results.items():
             if len(summarize_tasks) >= no_results:
-                break  
-            content = (data.get('content') or '').strip()
+                break
+            content = (data.get("content") or "").strip()
             if len(content.split()) < 100:
                 log(f"[google_search_and_scrape] [WARN] Skipping low-content article: {url}")
                 continue
-            if content:
-                truncated = content[:8000]
-                log(f"[google_search_and_scrape] [TRUNC] Truncated content for summarization: {len(truncated)} chars from {url}")
-                summarize_tasks.append(
-                    asyncio.create_task(summarize_article(truncated, question_details))
-                )
-                valid_urls.append(url)
-            else:
-                log(f"[google_search_and_scrape] [WARN] No content for {url}, skipping summarization.")
+            truncated = content[:8000]
+            log(f"[google_search_and_scrape] [TRUNC] Truncated content for summarization: {len(truncated)} chars from {url}")
+            summarize_tasks.append(asyncio.create_task(summarize_article(truncated, question_details)))
+            valid_urls.append(url)
 
         if not summarize_tasks:
             log("[google_search_and_scrape] [WARN] Warning: No content to summarize")
-            return f"<Summary query=\"{query}\">No usable content extracted from any URL.</Summary>\n"
+            return {"formatted": f"<Summary query=\"{query}\">No usable content extracted from any URL.</Summary>\n", "evidence": []}
 
         summaries = await asyncio.gather(*summarize_tasks, return_exceptions=True)
 
         output = ""
         success_count = 0
         for url, summary in zip(valid_urls, summaries):
+            meta = next((m for m in search_results if m.get("url") == url), {})
+            snippet_text = summary if not isinstance(summary, Exception) else str(summary)
+            evidence_item = _make_evidence_item(
+                provider="google_news" if is_news else "google",
+                query=query,
+                snippet=snippet_text if isinstance(snippet_text, str) else str(snippet_text),
+                url=url,
+                title=meta.get("title") or query,
+                published_at=meta.get("published_at"),
+                metadata={"source": meta.get("source", "web")},
+            )
+            evidences.append(evidence_item)
             if isinstance(summary, Exception):
                 log(f"[google_search_and_scrape] [ERROR] Error summarizing {url}: {summary}")
                 output += f"\n<Summary source=\"{url}\">\nError summarizing content: {str(summary)}\n</Summary>\n"
@@ -506,15 +632,14 @@ async def google_search_and_scrape(query, is_news, question_details, date_before
                 success_count += 1
                 output += f"\n<Summary source=\"{url}\">\n{summary}\n</Summary>\n"
 
-        # update serper success stats
         logger.log(f"[serper_urls] attempted=0 success={success_count}")
 
-        return output
+        return {"formatted": output, "evidence": evidences}
     except Exception as e:
         log(f"[google_search_and_scrape] Error: {str(e)}")
         traceback_str = traceback.format_exc()
         log(f"Traceback: {traceback_str}")
-        return f"<Summary query=\"{query}\">Error during search and scrape: {str(e)}</Summary>\n"
+        return {"formatted": f"<Summary query=\"{query}\">Error during search and scrape: {str(e)}</Summary>\n", "evidence": []}
     
 
 async def google_search_agentic(query, is_news=False):
@@ -533,14 +658,15 @@ async def google_search_agentic(query, is_news=False):
     try:
         if not ENABLE_BRIGHT_DATA:
             log("[google_search_agentic] [WARN] Bright Data scraping disabled by config")
-            return f"<RawContent query=\"{query}\">Scraping disabled by config.</RawContent>\n"
+            return {"formatted": f"<RawContent query=\"{query}\">Scraping disabled by config.</RawContent>\n", "evidence": []}
 
-        urls = await google_search(query, is_news)
+        search_results = await google_search(query, is_news)
 
-        if not urls:
+        if not search_results:
             log(f"[google_search_agentic] [ERROR] No URLs returned for query: '{query}'")
-            return f"<RawContent query=\"{query}\">No URLs returned from Google.</RawContent>\n"
+            return {"formatted": f"<RawContent query=\"{query}\">No URLs returned from Google.</RawContent>\n", "evidence": []}
 
+        urls = [item.get("url") for item in search_results if item.get("url")]
         async with FastContentExtractor() as extractor:
             log(f"[google_search_agentic] [INFO] Starting content extraction for {len(urls)} URLs")
             results = await extractor.extract_content(urls)
@@ -549,6 +675,7 @@ async def google_search_agentic(query, is_news=False):
         output = ""
         no_results = 3
         results_count = 0
+        evidences: list[EvidenceItem] = []
         
         for url, data in results.items():
             if results_count >= no_results:
@@ -564,74 +691,151 @@ async def google_search_agentic(query, is_news=False):
                 log(f"[google_search_agentic] [TRUNC] Including content: {len(truncated)} chars from {url}")
                 output += f"\n<RawContent source=\"{url}\">\n{truncated}\n</RawContent>\n"
                 results_count += 1
+                evidences.append(
+                    _make_evidence_item(
+                        provider="google_agentic",
+                        query=query,
+                        snippet=truncated,
+                        url=url,
+                        title=next((m.get("title") for m in search_results if m.get("url") == url), query),
+                        published_at=next((m.get("published_at") for m in search_results if m.get("url") == url), None),
+                        metadata={"source": "agentic"},
+                    )
+                )
             else:
                 log(f"[google_search_agentic] [WARN] No content for {url}, skipping.")
 
         if not output:
             log("[google_search_agentic] [WARN] Warning: No usable content found")
-            return f"<RawContent query=\"{query}\">No usable content extracted from any URL.</RawContent>\n"
+            return {"formatted": f"<RawContent query=\"{query}\">No usable content extracted from any URL.</RawContent>\n", "evidence": []}
 
-        return output
+        return {"formatted": output, "evidence": evidences}
         
     except Exception as e:
         log(f"[google_search_agentic] Error: {str(e)}")
         import traceback
         traceback_str = traceback.format_exc()
         log(f"Traceback: {traceback_str}")
-        return f"<RawContent query=\"{query}\">Error during search: {str(e)}</RawContent>\n"
+        return {"formatted": f"<RawContent query=\"{query}\">Error during search: {str(e)}</RawContent>\n", "evidence": []}
 
 
 
-async def process_search_queries(response: str, forecaster_id: str, question_details: dict, perplexity_bucket: str | None = None):
+
+
+async def process_search_queries(
+    response: str,
+    forecaster_id: str,
+    question_details: dict,
+    perplexity_bucket: str | None = None,
+    replay_key: str | None = None,
+    max_queries: int | None = None,
+) -> ResearchResult:
     """
-    Parses out search queries from the forecaster's response, executes them
-    (AskNews, Agent or Google/Google News), and returns formatted summaries.
-    Note: Agent replaces the previous Perplexity functionality.
+    Parse search queries from the forecaster output, execute providers, and
+    return structured evidence plus prompt-ready text.
     """
+    _log_provider_status_once()
+    search_plan = build_search_plan(question_details)
+    question_details["formalization"] = search_plan.get("formalization")
+
+    cached = maybe_replay_search(replay_key)
+    if cached:
+        log(f"[process_search_queries] Using replay fixture for key={replay_key}", level="info")
+        slug = question_details.get("slug") or question_details.get("title", "question")
+        replay_report = {
+            "bucket": perplexity_bucket or "research",
+            "kpis": compute_retrieval_kpis(cached.evidence),
+            "search_plan": search_plan,
+            "queries": cached.queries,
+            "formatted": cached.formatted,
+            "evidence": [e.to_dict() for e in cached.evidence],
+            "diagnostics": {"source": "replay_cache"},
+        }
+        question_details.setdefault("research_reports", []).append(replay_report)
+        question_details["research"] = {"evidence": [e.to_dict() for e in cached.evidence]}
+        persist_research_report(slug, perplexity_bucket or "research", replay_report)
+        return cached
+
+    evidence_items: List[EvidenceItem] = []
+    diagnostics: dict = {}
+    formatted_results = ""
+    queries_seen: List[str] = []
+    followup_ran = False
+
+    def _normalize_result(query: str, source: str, result: object) -> tuple[str, list[EvidenceItem]]:
+        if isinstance(result, Exception):
+            return "", []
+        formatted = ""
+        evidence: list[EvidenceItem] = []
+        if isinstance(result, dict) and "formatted" in result:
+            formatted = result.get("formatted", "")
+            raw_evidence = result.get("evidence") or []
+            for raw in raw_evidence:
+                if isinstance(raw, EvidenceItem):
+                    evidence.append(raw)
+                elif isinstance(raw, dict):
+                    evidence.append(EvidenceItem.from_dict(raw))
+        else:
+            formatted = str(result)
+        if not evidence:
+            url = _extract_first_url(formatted)
+            evidence.append(
+                _make_evidence_item(
+                    source.lower(),
+                    query,
+                    formatted,
+                    query_intent=perplexity_bucket,
+                    url=url,
+                    title=query,
+                    metadata={"source": source},
+                )
+            )
+        return formatted, evidence
+
     try:
-        # 1) Extract the "Search queries:" block
         search_queries_block = re.search(r'(?:Search queries:)(.*)', response, re.DOTALL | re.IGNORECASE)
-        if not search_queries_block:
-            log(f"Forecaster {forecaster_id}: No search queries block found")
-            return ""
+        normalized: List[tuple[str, str]] = []
+        if search_queries_block:
+            queries_text = search_queries_block.group(1).strip()
 
-        queries_text = search_queries_block.group(1).strip()
-
-        # 2) Try to find queries of the form: 1. "text" (Source)
-        # Support both "Perplexity" (legacy) and "Agent" (new)
-        search_queries = re.findall(
-            r'(?:\d+\.\s*)?(["\']?(.*?)["\']?)\s*\((Google|Google News|Assistant|Agent|Perplexity)\)',
-            queries_text
-        )
-        # 3) Fallback to unquoted queries if none found
-        if not search_queries:
             search_queries = re.findall(
-                r'(?:\d+\.\s*)?([^(\n]+)\s*\((Google|Google News|Assistant|Agent|Perplexity)\)',
-                queries_text
+                r'(?:\d+\.\s*)?([^\n]+?)\s*\((Google|Google News|Assistant|Agent|Perplexity)\)',
+                queries_text,
+            )
+            for raw_query, source in search_queries:
+                cleaned = raw_query.strip().strip('"').strip("'")
+                if cleaned:
+                    normalized.append((cleaned, source))
+
+        if not normalized:
+            fallback_queries: List[str] = []
+            if perplexity_bucket == "historical":
+                fallback_queries = search_plan.get("historical_queries") or []
+            elif perplexity_bucket == "current":
+                fallback_queries = search_plan.get("current_queries") or []
+            else:
+                fallback_queries = search_plan.get("counter_queries") or search_plan.get("data_queries") or []
+            normalized = [(q, "Perplexity" if prefer_perplexity() else "Google") for q in fallback_queries]
+            diagnostics["used_search_plan_fallback"] = True
+
+        if not normalized:
+            log(f"Forecaster {forecaster_id}: No valid search queries found in prompt or fallback.")
+            return ResearchResult(
+                formatted="",
+                evidence=[],
+                diagnostics={"reason": "no_valid_queries", "search_plan": search_plan},
             )
 
-        if not search_queries:
-            log(f"Forecaster {forecaster_id}: No valid search queries found:\n{queries_text}")
-            return ""
+        if max_queries is not None and max_queries > 0:
+            normalized = normalized[:max_queries]
 
-        log(f"Forecaster {forecaster_id}: Processing {len(search_queries)} search queries")
+        log(f"Forecaster {forecaster_id}: Processing {len(normalized)} search queries")
 
-        # 4) Kick off one asyncio task per query
-        tasks = []
-        query_sources = []  # Track which source goes with which task
-        formatted_results = ""
-        
-        for match in search_queries:
-            # match can be ("\"text\"", "text", "Source") or ("text", "Source")
-            if len(match) == 3:
-                _, raw_query, source = match
-            else:
-                raw_query, source = match
+        tasks: List[asyncio.Task] = []
+        query_sources = []
 
-            query = raw_query.strip().strip('"').strip("'")
-            if not query:
-                continue
-
+        for query, source in normalized:
+            queries_seen.append(query)
             effective_source = "Perplexity" if prefer_perplexity() else source
             log(f"Forecaster {forecaster_id}: Query='{query}' Source={effective_source}")
 
@@ -642,7 +846,7 @@ async def process_search_queries(response: str, forecaster_id: str, question_det
                             query,
                             is_news=(effective_source == "Google News"),
                             question_details=question_details,
-                            date_before=question_details.get("resolution_date")
+                            date_before=question_details.get("resolution_date"),
                         )
                     )
                     query_sources.append((query, effective_source))
@@ -669,19 +873,18 @@ async def process_search_queries(response: str, forecaster_id: str, question_det
                 tasks.append(call_perplexity(query, bucket=perplexity_bucket))
                 query_sources.append((query, "Perplexity"))
 
-        if not tasks:
+        if not tasks and not formatted_results:
             log(f"Forecaster {forecaster_id}: No tasks generated")
-            return formatted_results
+            return ResearchResult(formatted="", evidence=[], diagnostics={"reason": "no_tasks", "search_plan": search_plan})
 
-        # 5) Await all tasks
-        # First gather with return_exceptions=True to prevent one failure from breaking everything
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-        # 6) Format the outputs
+        results = []
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
         for (query, source), result in zip(query_sources, results):
             if isinstance(result, Exception):
                 log(f"[process_search_queries] [ERROR] Forecaster {forecaster_id}: Error for '{query}' -> {str(result)}")
-                # Add a message about the error in the formatted results
+                diagnostics.setdefault("errors", []).append(str(result))
                 if source == "Assistant":
                     formatted_results += f"\n<Asknews_articles>\nQuery: {query}\nError retrieving results: {str(result)}\n</Asknews_articles>\n"
                 elif source == "Agent":
@@ -690,25 +893,84 @@ async def process_search_queries(response: str, forecaster_id: str, question_det
                     formatted_results += f"\n<Summary query=\"{query}\">\nError retrieving results: {str(result)}\n</Summary>\n"
             else:
                 log(f"[process_search_queries] [OK] Forecaster {forecaster_id}: Query '{query}' processed successfully.")
-                
+                snippet, ev_items = _normalize_result(query, source, result)
                 if source == "Assistant":
-                    formatted_results += f"\n<Asknews_articles>\nQuery: {query}\n{result}</Asknews_articles>\n"
+                    formatted_results += f"\n<Asknews_articles>\nQuery: {query}\n{snippet}</Asknews_articles>\n"
                 elif source == "Agent":
-                    formatted_results += f"\n<Agent_report>\nQuery: {query}\n{result}</Agent_report>\n"
+                    formatted_results += f"\n<Agent_report>\nQuery: {query}\n{snippet}\n</Agent_report>\n"
                 else:
-                    # Google/Google News tasks already return <Summary> blocks
-                    formatted_results += result
+                    formatted_results += snippet
+                evidence_items.extend(ev_items)
 
-        return formatted_results
+        evidence_items = _dedup_evidence_items(evidence_items)
+
+        kpis = compute_retrieval_kpis(evidence_items)
+        replay_mode = os.getenv("ENABLE_REPLAY_MODE", "").strip().lower() in {"1", "true", "yes"}
+        if not replay_mode and kpis.get("unique_domains", 0) < 2 and search_plan.get("missing_fact_queries"):
+            follow_query = search_plan["missing_fact_queries"][0]
+            follow_res = await call_perplexity(follow_query, bucket=perplexity_bucket)
+            snippet, ev_items = _normalize_result(follow_query, "Perplexity", follow_res)
+            formatted_results += f"\n<Followup query=\"{follow_query}\">\n{snippet}\n</Followup>\n"
+            evidence_items.extend(ev_items)
+            evidence_items = _dedup_evidence_items(evidence_items)
+            kpis = compute_retrieval_kpis(evidence_items)
+            followup_ran = True
+
+        facts = extract_fact_candidates(evidence_items)
+        synthesis = _summarize_evidence_items(evidence_items)
+        formatted_results += f"\n<EvidenceSummary>\n{synthesis}\n</EvidenceSummary>\n"
+        report = {
+            "errors": diagnostics.get("errors", []),
+            "kpis": kpis,
+            "search_plan": search_plan,
+            "followup_ran": followup_ran,
+            "fact_candidates": facts,
+            "synthesis": synthesis,
+        }
+        result_obj = ResearchResult(
+            formatted=formatted_results,
+            evidence=evidence_items,
+            report=report,
+            queries=queries_seen,
+            diagnostics=diagnostics,
+        )
+
+        slug = question_details.get("slug") or question_details.get("title", "question")
+        persist_research_result(slug, result_obj)
+        report_payload = {
+            "bucket": perplexity_bucket or "research",
+            "kpis": kpis,
+            "search_plan": search_plan,
+            "queries": queries_seen,
+            "formatted": formatted_results,
+            "evidence": [e.to_dict() for e in evidence_items],
+            "diagnostics": diagnostics,
+            "facts": facts,
+            "synthesis": synthesis,
+        }
+        question_details.setdefault("research_reports", []).append(report_payload)
+        question_details["research"] = {"evidence": [e.to_dict() for e in evidence_items]}
+        persist_research_report(slug, perplexity_bucket or "research", report_payload)
+        record_search_result(replay_key, result_obj)
+        return result_obj
 
     except Exception as e:
         log(f"Forecaster {forecaster_id}: Error processing search queries: {str(e)}")
         import traceback
-        log(f"Traceback: {traceback.format_exc()}")
-        # Return what we have so far instead of nothing
-        return "Error processing some search queries. Partial results may be available."
-
-
+        trace = traceback.format_exc()
+        log(f"Traceback: {trace}")
+        diagnostics.setdefault("errors", []).append(str(e))
+        result_obj = ResearchResult(
+            formatted="Error processing some search queries. Partial results may be available.",
+            evidence=evidence_items,
+            report={"errors": diagnostics.get("errors", [])},
+            queries=queries_seen,
+            diagnostics={"exception": str(e)},
+        )
+        if replay_key:
+            record_search_result(replay_key, result_obj)
+        persist_research_result(question_details.get("slug") or question_details.get("title", "question"), result_obj)
+        return result_obj
 async def main():
     """
     Demonstrates the usage of process_search_queries with sample search queries.

@@ -1,0 +1,98 @@
+{
+  "smoke-binary:binary:historical_search": {
+    "formatted": "<Summary query=\"history\">Historic summary for smoke binary.</Summary>",
+    "evidence": [
+      {
+        "provider": "google",
+        "query": "history",
+        "url": "https://example.com/history",
+        "snippet": "Historic summary for smoke binary."
+      }
+    ],
+    "report": {},
+    "queries": [
+      "history"
+    ],
+    "diagnostics": {}
+  },
+  "smoke-binary:binary:current_search": {
+    "formatted": "<Summary query=\"current\">Current summary for smoke binary.</Summary>",
+    "evidence": [
+      {
+        "provider": "google news",
+        "query": "current",
+        "url": "https://example.com/current",
+        "snippet": "Current summary for smoke binary."
+      }
+    ],
+    "report": {},
+    "queries": [
+      "current"
+    ],
+    "diagnostics": {}
+  },
+  "smoke-numeric:numeric:historical_search": {
+    "formatted": "<Summary query=\"num-history\">Historic numeric summary.</Summary>",
+    "evidence": [
+      {
+        "provider": "google",
+        "query": "num-history",
+        "url": "https://example.com/num-history",
+        "snippet": "Historic numeric summary."
+      }
+    ],
+    "queries": [
+      "num-history"
+    ],
+    "report": {},
+    "diagnostics": {}
+  },
+  "smoke-numeric:numeric:current_search": {
+    "formatted": "<Summary query=\"num-current\">Current numeric summary.</Summary>",
+    "evidence": [
+      {
+        "provider": "google news",
+        "query": "num-current",
+        "url": "https://example.com/num-current",
+        "snippet": "Current numeric summary."
+      }
+    ],
+    "queries": [
+      "num-current"
+    ],
+    "report": {},
+    "diagnostics": {}
+  },
+  "smoke-mcq:mcq:historical_search": {
+    "formatted": "<Summary query=\"mcq-history\">Historic MCQ summary.</Summary>",
+    "evidence": [
+      {
+        "provider": "google",
+        "query": "mcq-history",
+        "url": "https://example.com/mcq-history",
+        "snippet": "Historic MCQ summary."
+      }
+    ],
+    "queries": [
+      "mcq-history"
+    ],
+    "report": {},
+    "diagnostics": {}
+  },
+  "smoke-mcq:mcq:current_search": {
+    "formatted": "<Summary query=\"mcq-current\">Current MCQ summary.</Summary>",
+    "evidence": [
+      {
+        "provider": "google news",
+        "query": "mcq-current",
+        "url": "https://example.com/mcq-current",
+        "snippet": "Current MCQ summary."
+      }
+    ],
+    "queries": [
+      "mcq-current"
+    ],
+    "report": {},
+    "diagnostics": {}
+  }
+}

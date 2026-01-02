@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from prompts import claude_context, gpt_context
 from model_config import get_forecaster_model
 from logging_utils import get_current_logger
+from replay import maybe_replay_llm, replay_enabled
 """
 This file contains the main forecasting logic, question-type specific functions are abstracted.
 """
@@ -25,7 +26,13 @@ load_dotenv()
 METACULUS_TOKEN = os.getenv("METACULUS_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-async def call_anthropic_api(prompt, max_tokens=16000, max_retries=7, cached_content=claude_context):
+async def call_anthropic_api(
+    prompt,
+    max_tokens=16000,
+    max_retries=7,
+    cached_content=claude_context,
+    replay_key: str | None = None,
+):
     url = "https://llm-proxy.metaculus.com/proxy/anthropic/v1/messages/"
     headers = {
         "Authorization": f"Token {METACULUS_TOKEN}",
@@ -59,59 +66,63 @@ async def call_anthropic_api(prompt, max_tokens=16000, max_retries=7, cached_con
         ]
     }
 
-    for attempt in range(max_retries):
-        backoff_delay = min(2 ** attempt, 60)
-        
-        try:
-            _log(f"Starting API call attempt {attempt + 1}")
-            timeout = ClientTimeout(total=300)  # 5 minutes total timeout
-            
-            async with ClientSession(timeout=timeout) as session:
-                async with session.post(url, headers=headers, json=data) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        _log(f"API error (status {response.status}): {error_text}", level="error")
-                        
-                        if response.status in [429, 503]:  # Rate limit or service unavailable
-                            _log(f"Retryable error. Waiting {backoff_delay} seconds...", level="info")
-                            await asyncio.sleep(backoff_delay)
-                            continue
-                            
-                        response.raise_for_status()
-                    
-                    result = await response.json()
-                    text = ""
-                    thinking = ""
-                    for block in result.get("content", []):
-                        if block.get("type") == "text":
-                           text = block.get("text")
-                        if block.get("type") == "thinking":
-                            thinking = block.get("thinking")
-                    
-                    _log(f"Claude thinking block captured ({len(thinking)} chars)", level="info")
-                    return text
-                    
-                    _log("No 'text' block found in content.", level="error")
-                    return "No final answer found in Claude response."
-                        
-        except (ClientError, asyncio.TimeoutError) as e:
-            _log(f"Retryable error on attempt {attempt + 1}: {str(e)}", level="error")
-            if attempt == max_retries - 1:
-                raise
-            await asyncio.sleep(backoff_delay)
-            
-        except Exception as e:
-            _log(f"Unexpected error on attempt {attempt + 1}: {str(e)}", level="error")
-            if attempt == max_retries - 1:
-                raise
-            await asyncio.sleep(backoff_delay)
+    async def _live_call():
+        for attempt in range(max_retries):
+            backoff_delay = min(2 ** attempt, 60)
 
-    raise Exception(f"Failed after {max_retries} attempts")
+            try:
+                _log(f"Starting API call attempt {attempt + 1}")
+                timeout = ClientTimeout(total=300)  # 5 minutes total timeout
+
+                async with ClientSession(timeout=timeout) as session:
+                    async with session.post(url, headers=headers, json=data) as response:
+                        if response.status != 200:
+                            error_text = await response.text()
+                            _log(f"API error (status {response.status}): {error_text}", level="error")
+
+                            if response.status in [429, 503]:  # Rate limit or service unavailable
+                                _log(f"Retryable error. Waiting {backoff_delay} seconds...", level="info")
+                                await asyncio.sleep(backoff_delay)
+                                continue
+
+                            response.raise_for_status()
+
+                        result = await response.json()
+                        text = ""
+                        thinking = ""
+                        for block in result.get("content", []):
+                            if block.get("type") == "text":
+                                text = block.get("text")
+                            if block.get("type") == "thinking":
+                                thinking = block.get("thinking")
+
+                        _log(f"Claude thinking block captured ({len(thinking)} chars)", level="info")
+                        if text:
+                            return text
+
+                        _log("No 'text' block found in content.", level="error")
+                        return "No final answer found in Claude response."
+
+            except (ClientError, asyncio.TimeoutError) as e:
+                _log(f"Retryable error on attempt {attempt + 1}: {str(e)}", level="error")
+                if attempt == max_retries - 1:
+                    raise
+                await asyncio.sleep(backoff_delay)
+
+            except Exception as e:
+                _log(f"Unexpected error on attempt {attempt + 1}: {str(e)}", level="error")
+                if attempt == max_retries - 1:
+                    raise
+                await asyncio.sleep(backoff_delay)
+
+        raise Exception(f"Failed after {max_retries} attempts")
+
+    return await maybe_replay_llm(replay_key, prompt, "anthropic/claude-3.5-sonnet-proxy", _live_call)
 
 
-async def call_claude(prompt):
+async def call_claude(prompt, *, replay_key: str | None = None):
     try:
-        response = await call_anthropic_api(prompt)
+        response = await call_anthropic_api(prompt, replay_key=replay_key)
         
         if not response:
             _log("Warning: Empty response from Anthropic API", level="error")
@@ -149,7 +160,7 @@ def extract_and_run_python_code(llm_output: str) -> str:
     return new_stdout.getvalue()
 
 def _openrouter_headers() -> dict:
-    if not OPENROUTER_API_KEY:
+    if not OPENROUTER_API_KEY and not replay_enabled():
         raise ValueError("OPENROUTER_API_KEY not found in environment variables")
     return {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -166,69 +177,73 @@ async def call_openrouter_chat(
     system: str | None = None,
     max_tokens: int = 16000,
     max_retries: int = 3,
+    replay_key: str | None = None,
 ) -> str:
     """
     Generic OpenRouter chat caller used for all GPT-family traffic.
     """
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = _openrouter_headers()
+    async def _live_call():
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        headers = _openrouter_headers()
 
-    messages = []
-    if system:
-        messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": prompt})
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
 
-    data = {
-        "model": model,
-        "max_tokens": max_tokens,
-        "messages": messages,
-    }
+        data = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "messages": messages,
+        }
 
-    for attempt in range(max_retries):
-        backoff_delay = min(2 ** attempt, 30)
-        try:
-            _log(f"OpenRouter {model} attempt {attempt + 1}", level="info")
-            timeout = ClientTimeout(total=300)
-            async with ClientSession(timeout=timeout) as session:
-                async with session.post(url, headers=headers, json=data) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        _log(f"OpenRouter API error (status {response.status}): {error_text}", level="error")
-                        if response.status in [429, 503]:
-                            await asyncio.sleep(backoff_delay)
-                            continue
-                        response.raise_for_status()
+        for attempt in range(max_retries):
+            backoff_delay = min(2 ** attempt, 30)
+            try:
+                _log(f"OpenRouter {model} attempt {attempt + 1}", level="info")
+                timeout = ClientTimeout(total=300)
+                async with ClientSession(timeout=timeout) as session:
+                    async with session.post(url, headers=headers, json=data) as response:
+                        if response.status != 200:
+                            error_text = await response.text()
+                            _log(f"OpenRouter API error (status {response.status}): {error_text}", level="error")
+                            if response.status in [429, 503]:
+                                await asyncio.sleep(backoff_delay)
+                                continue
+                            response.raise_for_status()
 
-                    result = await response.json()
-                    return result["choices"][0]["message"]["content"]
-        except (ClientError, asyncio.TimeoutError) as e:
-            _log(f"OpenRouter retryable error on attempt {attempt + 1}: {str(e)}", level="error")
-            if attempt == max_retries - 1:
-                raise
-            await asyncio.sleep(backoff_delay)
-        except Exception as e:
-            _log(f"OpenRouter unexpected error on attempt {attempt + 1}: {str(e)}", level="error")
-            if attempt == max_retries - 1:
-                raise
-            await asyncio.sleep(backoff_delay)
+                        result = await response.json()
+                        return result["choices"][0]["message"]["content"]
+            except (ClientError, asyncio.TimeoutError) as e:
+                _log(f"OpenRouter retryable error on attempt {attempt + 1}: {str(e)}", level="error")
+                if attempt == max_retries - 1:
+                    raise
+                await asyncio.sleep(backoff_delay)
+            except Exception as e:
+                _log(f"OpenRouter unexpected error on attempt {attempt + 1}: {str(e)}", level="error")
+                if attempt == max_retries - 1:
+                    raise
+                await asyncio.sleep(backoff_delay)
 
-    raise Exception(f"OpenRouter {model} failed after {max_retries} attempts")
+        raise Exception(f"OpenRouter {model} failed after {max_retries} attempts")
+
+    return await maybe_replay_llm(replay_key, prompt, model, _live_call)
 
 
-async def call_gpt(prompt: str, *, model: str = "openai/o4-mini", max_tokens: int = 4000) -> str:
+async def call_gpt(prompt: str, *, model: str = "openai/o4-mini", max_tokens: int = 4000, replay_key: str | None = None) -> str:
     """General GPT caller (OpenRouter-backed)."""
-    return await call_openrouter_chat(prompt, model=model, system=gpt_context, max_tokens=max_tokens)
+    return await call_openrouter_chat(prompt, model=model, system=gpt_context, max_tokens=max_tokens, replay_key=replay_key)
 
 
-async def call_gpt_o3(prompt: str, *, max_tokens: int = 16000) -> str:
+async def call_gpt_o3(prompt: str, *, max_tokens: int = 16000, replay_key: str | None = None) -> str:
     """
     Equivalent to the prior o3 helper but routed through OpenRouter.
     """
-    return await call_openrouter_chat(prompt, model="openai/o3-mini", system=gpt_context, max_tokens=max_tokens)
+    return await call_openrouter_chat(prompt, model="openai/o3-mini", system=gpt_context, max_tokens=max_tokens, replay_key=replay_key)
 
 
-async def call_gpt_o4_mini(prompt: str, *, max_tokens: int = 16000) -> str:
-    return await call_openrouter_chat(prompt, model="openai/o4-mini", system=gpt_context, max_tokens=max_tokens)
+async def call_gpt_o4_mini(prompt: str, *, max_tokens: int = 16000, replay_key: str | None = None) -> str:
+    return await call_openrouter_chat(prompt, model="openai/o4-mini", system=gpt_context, max_tokens=max_tokens, replay_key=replay_key)
 
 
 # OpenRouter API functions
@@ -286,7 +301,13 @@ async def call_gpt_o4_mini_with_fallback(prompt):
 
 
 # Configurable forecaster functions using OpenRouter
-async def call_forecaster_model(forecaster_id: int, prompt: str, max_tokens: int = 16000, max_retries: int = 3) -> str:
+async def call_forecaster_model(
+    forecaster_id: int,
+    prompt: str,
+    max_tokens: int = 16000,
+    max_retries: int = 3,
+    replay_key: str | None = None,
+) -> str:
     """
     Call a specific forecaster's configured model via OpenRouter.
     
@@ -332,62 +353,65 @@ async def call_forecaster_model(forecaster_id: int, prompt: str, max_tokens: int
         ]
     }
     
-    for attempt in range(max_retries):
-        backoff_delay = min(2 ** attempt, 30)
-        
-        try:
-            _log(f"OpenRouter {model} attempt {attempt + 1} for forecaster {forecaster_id}", level="info")
-            timeout = ClientTimeout(total=300)
-            
-            async with ClientSession(timeout=timeout) as session:
-                async with session.post(url, headers=headers, json=data) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        _log(f"OpenRouter API error (status {response.status}): {error_text}", level="error")
-                        
-                        if response.status in [429, 503]:
-                            _log(f"Rate limited. Waiting {backoff_delay} seconds...", level="info")
-                            await asyncio.sleep(backoff_delay)
-                            continue
-                            
-                        response.raise_for_status()
-                    
-                    result = await response.json()
-                    return result['choices'][0]['message']['content']
-                    
-        except (ClientError, asyncio.TimeoutError) as e:
-            _log(f"OpenRouter retryable error on attempt {attempt + 1}: {str(e)}", level="error")
-            if attempt == max_retries - 1:
-                raise
-            await asyncio.sleep(backoff_delay)
-            
-        except Exception as e:
-            _log(f"OpenRouter unexpected error on attempt {attempt + 1}: {str(e)}", level="error")
-            if attempt == max_retries - 1:
-                raise
-            await asyncio.sleep(backoff_delay)
+    async def _live_call():
+        for attempt in range(max_retries):
+            backoff_delay = min(2 ** attempt, 30)
 
-    raise Exception(f"OpenRouter {model} failed after {max_retries} attempts")
+            try:
+                _log(f"OpenRouter {model} attempt {attempt + 1} for forecaster {forecaster_id}", level="info")
+                timeout = ClientTimeout(total=300)
+
+                async with ClientSession(timeout=timeout) as session:
+                    async with session.post(url, headers=headers, json=data) as response:
+                        if response.status != 200:
+                            error_text = await response.text()
+                            _log(f"OpenRouter API error (status {response.status}): {error_text}", level="error")
+
+                            if response.status in [429, 503]:
+                                _log(f"Rate limited. Waiting {backoff_delay} seconds...", level="info")
+                                await asyncio.sleep(backoff_delay)
+                                continue
+
+                            response.raise_for_status()
+
+                        result = await response.json()
+                        return result['choices'][0]['message']['content']
+
+            except (ClientError, asyncio.TimeoutError) as e:
+                _log(f"OpenRouter retryable error on attempt {attempt + 1}: {str(e)}", level="error")
+                if attempt == max_retries - 1:
+                    raise
+                await asyncio.sleep(backoff_delay)
+
+            except Exception as e:
+                _log(f"OpenRouter unexpected error on attempt {attempt + 1}: {str(e)}", level="error")
+                if attempt == max_retries - 1:
+                    raise
+                await asyncio.sleep(backoff_delay)
+
+        raise Exception(f"OpenRouter {model} failed after {max_retries} attempts")
+
+    return await maybe_replay_llm(replay_key, prompt, model, _live_call)
 
 
 # Convenience functions for each forecaster
-async def call_forecaster_1(prompt: str) -> str:
+async def call_forecaster_1(prompt: str, replay_key: str | None = None) -> str:
     """Call forecaster 1's configured model."""
-    return await call_forecaster_model(1, prompt)
+    return await call_forecaster_model(1, prompt, replay_key=replay_key)
 
-async def call_forecaster_2(prompt: str) -> str:
+async def call_forecaster_2(prompt: str, replay_key: str | None = None) -> str:
     """Call forecaster 2's configured model."""
-    return await call_forecaster_model(2, prompt)
+    return await call_forecaster_model(2, prompt, replay_key=replay_key)
 
-async def call_forecaster_3(prompt: str) -> str:
+async def call_forecaster_3(prompt: str, replay_key: str | None = None) -> str:
     """Call forecaster 3's configured model."""
-    return await call_forecaster_model(3, prompt)
+    return await call_forecaster_model(3, prompt, replay_key=replay_key)
 
-async def call_forecaster_4(prompt: str) -> str:
+async def call_forecaster_4(prompt: str, replay_key: str | None = None) -> str:
     """Call forecaster 4's configured model."""
-    return await call_forecaster_model(4, prompt)
+    return await call_forecaster_model(4, prompt, replay_key=replay_key)
 
-async def call_forecaster_5(prompt: str) -> str:
+async def call_forecaster_5(prompt: str, replay_key: str | None = None) -> str:
     """Call forecaster 5's configured model."""
-    return await call_forecaster_model(5, prompt)
+    return await call_forecaster_model(5, prompt, replay_key=replay_key)
     

@@ -1,0 +1,15 @@
+{
+  "formatted": "<Summary>example</Summary>",
+  "evidence": [
+    {
+      "provider": "test",
+      "query": "q1",
+      "url": "http://example.com"
+    }
+  ],
+  "report": {},
+  "queries": [],
+  "diagnostics": {},
+  "question_slug": "q-slug",
+  "saved_at_utc": "2026-01-01T18:08:54.312700"
+}

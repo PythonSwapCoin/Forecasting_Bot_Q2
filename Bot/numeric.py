@@ -15,6 +15,10 @@ from prompts import (
 )
 from llm_calls import call_claude, call_gpt_o4_mini, call_gpt_o3
 from search import process_search_queries
+from logging_utils import get_current_logger
+from replay import make_replay_key
+from evidence import ResearchResult
+from config import load_run_config
 
 VALID_KEYS = {1,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,99}
 
@@ -360,8 +364,16 @@ def generate_continuous_cdf(percentile_values, open_upper_bound, open_lower_boun
     return cdf_y.tolist()
 
 async def get_numeric_forecast(question_details: dict, write=None):
+    run_config = load_run_config()
+    sample_count = run_config.forecast_runs_per_model
+    if run_config.enable_replay_mode and sample_count > 1:
+        sample_count = 1
+    forecaster_count = max(1, min(5, run_config.forecaster_count))
     today = datetime.datetime.now().strftime("%Y-%m-%d")
     title = question_details["title"]
+    if not question_details.get("slug"):
+        slug = "".join(c.lower() if c.isalnum() else "-" for c in title).strip("-") or "numeric-question"
+        question_details["slug"] = slug
     resolution = question_details["resolution_criteria"]
     background = question_details["description"]
     fine_print = question_details.get("fine_print", "")
@@ -371,7 +383,6 @@ async def get_numeric_forecast(question_details: dict, write=None):
     lower = question_details["scaling"]["range_min"]
     zero = question_details["scaling"].get("zero_point")
     unit = question_details.get("unit", "(unknown)")
-    from logging_utils import get_current_logger
     logger = get_current_logger()
 
     def log(message: str, level: str = "info") -> None:
@@ -379,7 +390,7 @@ async def get_numeric_forecast(question_details: dict, write=None):
         if write:
             write(message)
 
-    async def format_call(prompt):
+    async def format_call(prompt, replay_suffix: str):
         txt = prompt.format(
             title=title, today=today, background=background,
             resolution_criteria=resolution, fine_print=fine_print,
@@ -388,28 +399,72 @@ async def get_numeric_forecast(question_details: dict, write=None):
             units=unit,
             hint = f"The answer is expected to be above {lower} and below {upper}. Think carefully, and reconsider your sources, if your projections are outside this range."
         )
-        return txt, await call_gpt_o3(txt)
+        key = make_replay_key(question_details, replay_suffix)
+        return txt, await call_gpt_o3(txt, replay_key=key)
 
-    hist_prompt, hist_out = await format_call(NUMERIC_PROMPT_historical)
-    curr_prompt, curr_out = await format_call(NUMERIC_PROMPT_current)
+    hist_prompt, hist_out = await format_call(NUMERIC_PROMPT_historical, "numeric:historical_context")
+    curr_prompt, curr_out = await format_call(NUMERIC_PROMPT_current, "numeric:current_context")
 
-    hist_context = await process_search_queries(hist_out, forecaster_id="-1", question_details=question_details)
-    curr_context = await process_search_queries(curr_out, forecaster_id="0", question_details=question_details)
+    hist_context = await process_search_queries(
+        hist_out,
+        forecaster_id="-1",
+        question_details=question_details,
+        replay_key=make_replay_key(question_details, "numeric:historical_search"),
+        max_queries=run_config.max_historical_queries,
+    )
+    curr_context = await process_search_queries(
+        curr_out,
+        forecaster_id="0",
+        question_details=question_details,
+        replay_key=make_replay_key(question_details, "numeric:current_search"),
+        max_queries=run_config.max_current_queries,
+    )
 
-    log(f"Historical output: {hist_out}\nContext: {hist_context}")
-    log(f"Current output: {curr_out}\nContext: {curr_context}")
+    def _has_usable_research(result: ResearchResult | str) -> bool:
+        text = result.formatted if isinstance(result, ResearchResult) else str(result or "")
+        if not text.strip():
+            return False
+        lowered = text.lower()
+        positive_markers = ["<summary", "<rawcontent", "<agent_report", "<asknews_articles"]
+        if any(marker in lowered for marker in positive_markers):
+            return True
+        return len(text.strip()) > 300
+
+    if not _has_usable_research(hist_context) and not _has_usable_research(curr_context):
+        log("Research failure: no usable historical or current context retrieved. Proceeding with empty context.", level="error")
+        hist_context = ResearchResult(formatted="No usable historical research retrieved; proceed with base-rate reasoning only.")
+        curr_context = ResearchResult(formatted="No usable current research retrieved; proceed with general reasoning.")
+    else:
+        if not _has_usable_research(hist_context):
+            log("Historical research missing; proceeding with current context only.", level="error")
+            hist_context = ResearchResult(formatted="No usable historical research retrieved; proceed with base-rate reasoning only.")
+        if not _has_usable_research(curr_context):
+            log("Current research missing; proceeding with historical context only.", level="error")
+            curr_context = ResearchResult(formatted="No usable current research retrieved; proceed with general reasoning.")
+
+    log(f"Historical output: {hist_out}\nContext: {hist_context.formatted}")
+    log(f"Current output: {curr_out}\nContext: {curr_context.formatted}")
 
     prompt1 = NUMERIC_PROMPT_1.format(
         title=title, today=today, resolution_criteria=resolution,
-        fine_print=fine_print, context=hist_context,
+        fine_print=fine_print, context=hist_context.formatted,
         units=unit, lower_bound_message="", upper_bound_message="",
         hint = f"The answer is expected to be above {lower} and below {upper}. Think carefully, and reconsider your sources, if your projections are outside this range."
     )
 
+    forecaster_funcs = [
+        call_claude,
+        call_claude,
+        call_gpt_o4_mini,
+        call_gpt_o3,
+        call_gpt_o3,
+    ][:forecaster_count]
+
     base_forecasts = await asyncio.gather(
-        call_claude(prompt1), call_claude(prompt1),
-        call_gpt_o4_mini(prompt1), call_gpt_o3(prompt1),
-        call_gpt_o3(prompt1)
+        *[
+            func(prompt1, replay_key=make_replay_key(question_details, f"numeric:prompt1:f{idx+1}"))
+            for idx, func in enumerate(forecaster_funcs)
+        ]
     )
 
     for i, out in enumerate(base_forecasts):
@@ -417,8 +472,8 @@ async def get_numeric_forecast(question_details: dict, write=None):
 
 
     context_map = {
-        str(i+1): f"Current context: {curr_context}\nPrior: {base_forecasts[i]}"
-        for i in range(5)
+        str(i + 1): f"Current context: {curr_context.formatted}\nPrior: {base_forecasts[i]}"
+        for i in range(len(base_forecasts))
     }
 
     prompts2 = [NUMERIC_PROMPT_2.format(
@@ -426,27 +481,41 @@ async def get_numeric_forecast(question_details: dict, write=None):
         fine_print=fine_print, context=context_map[str(i+1)],
         units=unit, lower_bound_message="", upper_bound_message="",
         hint = f"The answer is expected to be above {lower} and below {upper}. Think carefully, and reconsider your sources, if your projections are outside this range."
-    ) for i in range(5)]
+    ) for i in range(len(forecaster_funcs))]
 
-    step2_outputs = await asyncio.gather(
-        call_claude(prompts2[0]), call_claude(prompts2[1]),
-        call_gpt_o4_mini(prompts2[2]), call_gpt_o3(prompts2[3]),
-        call_gpt_o3(prompts2[4])
-    )
+    async def run_prompt2():
+        funcs = forecaster_funcs
+        all_samples = []
+        for idx, (func, prompt) in enumerate(zip(funcs, prompts2), start=1):
+            samples = []
+            for s in range(sample_count):
+                suffix = f"numeric:prompt2:f{idx}" if sample_count == 1 else f"numeric:prompt2:f{idx}:s{s}"
+                samples.append(await func(prompt, replay_key=make_replay_key(question_details, suffix)))
+            all_samples.append(samples)
+        return all_samples
+
+    step2_outputs = await run_prompt2()
 
     all_cdfs = []
     final_outputs = []
 
-    for i, output in enumerate(step2_outputs):
-        try:
-            parsed = extract_percentiles_from_response(output, verbose=False)
-            parsed = enforce_strict_increasing(parsed)
-            cdf = generate_continuous_cdf(parsed, open_upper, open_lower, upper, lower, zero)
-            all_cdfs.append((cdf, 2 if (i == 4 or i == 3) else 1))
-        except Exception as e:
-            log(f"❌ Forecaster {i+1} failed: {e}", level="error")
-        final_outputs.append(f"=== Forecaster {i+1} ===\n{output}\n")
-
+    for i, outputs in enumerate(step2_outputs):
+        cdfs = []
+        joined_out = []
+        for s_idx, output in enumerate(outputs):
+            try:
+                parsed = extract_percentiles_from_response(output, verbose=False)
+                parsed = enforce_strict_increasing(parsed)
+                cdf = generate_continuous_cdf(parsed, open_upper, open_lower, upper, lower, zero)
+                cdfs.append(cdf)
+            except Exception as e:
+                log(f"Forecaster {i+1} sample {s_idx} failed: {e}", level="error")
+            joined_out.append(output)
+        if cdfs:
+            mean_cdf = (np.mean(np.array(cdfs), axis=0)).tolist()
+            weight = 2 if (i >= len(forecaster_funcs) - 2) else 1
+            all_cdfs.append((mean_cdf, weight))
+        final_outputs.append(f"=== Forecaster {i+1} ===\n" + "\n--- sample ---\n".join(joined_out) + "\n")
     if len(all_cdfs) < 3:
         raise RuntimeError(f"🚨 Only {len(all_cdfs)} valid CDFs — need at least 3 to proceed")
 

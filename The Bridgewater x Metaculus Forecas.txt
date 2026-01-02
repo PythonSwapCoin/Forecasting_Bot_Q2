@@ -1,0 +1,860 @@
+The Bridgewater x Metaculus Forecasting Contest returns for year three. $30,000 in prizes across Open and Undergraduate competitions, plus recruiting opportunities for top forecasters. Past contests have led to internship offers and full-time hires at Bridgewater.
+
+Register here and compete for prizes starting January 12.
+
+search questions...
+
+
+Questions
+Tournaments
+Services
+News
+More
+Log in
+Sign Up
+
+a
+/
+文
+
+Metaculus AI Benchmark Resources Page
+by BenWilson
+•
+Jul 30, 2025
+•
+Edited on Dec 31, 2025
+•
+46 min read
+
+3
+
+Follow
+
+Metaculus AI Benchmark Resources Page
+Overview
+What Do the Tournaments Look Like?
+What is Unique About this Benchmark?
+What are the “Metac” bots?
+Common Leaderboard Interpretation Pitfalls
+What is Forecasting?
+Why Benchmark Forecasting for LLMs?
+Want to Join the AI Forecasting Benchmark?
+Getting Started
+Creating your Bot Account and Metaculus Token
+Can I get free search and LLM services?
+More about Free LLM Credits
+Search Provider API Keys
+Getting AskNews Setup
+Getting Perplexity Set Up
+Getting Exa Set Up
+Other Search
+Can you make a good bot?
+Can I submit multiple bots?
+How can I test if my bot is working?
+How can I get feedback faster?
+How can I add support for Discrete Questions?
+How are prizes distributed?
+Competition Rules
+Research Reports and Overview of the Field
+Main Takeaways
+FutureEval Results Year 1
+FutureEval Results Year 2
+Primary Bot Maker Tournaments
+MiniBench Tournaments
+Other Metaculus Research
+Analysis from the community
+Research Papers
+Companies and Projects
+What other Benchmarks are there?
+Open Source Bots
+What are other bots doing?
+Want to use our data?
+Want to predict the future with AI in your project?
+19 comments
+Overview
+Welcome to the Metaculus AI Forecasting Benchmark (AIB) resources page (soon to be rebranded FutureEval)! Metaculus is currently running its second year of benchmarking tournaments with $175k in prizes to help measure how well LLMs predict future events. Our goal is to determine how much we can trust AI in significant, uncertain decisions by assessing its ability to predict future events accurately. Additionally, AIB serves as a unique test of AI reasoning capability. Contamination and pre-training are not possible, since the answers are not known in advance. Saturation is also impossible, since the future can never be perfectly predicted.
+
+Join the Benchmark: Want to compete in the benchmark? We have a 30min tutorial to help you get started quickly. There is a new tournament every 2 weeks, and the main competition starts every September, January, and May. We provide LLM credits to competitors.
+See Results: Interested in learning about progress in AI Forecasting? We have past benchmark results in our research section. As of Q2, the best humans still beat bots, and having a SOTA model matters more than bot infrastructure.
+Utilize Automated Forecasts: Interested in deploying AI forecasting in your project? We can collaborate on launching questions to bots in a tournament or connect you with other related resources.
+Stay up to date: You can ask questions and discuss strategy in the “build-a-forecasting-bot” channel of the Metaculus Discord. If you want regular updates, please follow this page by clicking “Following” > “Customize” > “Every comment”. Important announcements and updates will be shared in the comments section. Discord will have more frequent and niche updates. Ask questions to ben [at] metaculus [.com].
+
+What Do the Tournaments Look Like?
+The AI Forecasting Benchmark Tournament is split into 2 series:
+
+$50k Fall/Spring/Summer Bot Tournament: A new season will start every September, January, and May. This is our primary tournament and it happens 3 times a year. Its 4-month length allows it to align with the same time frame as the Metaculus Cup. Each season will have a $50k prize pool and will consist of around 300-500 questions. Most questions will be imported from the main Metaculus site to compare bot performance against the community prediction. Questions will consist of a mix of binary, numeric, discrete (a version of numeric), and multiple-choice formats. You can find past and present bot tournaments by searching “AI Forecasting Benchmark” on the tournaments page. The most recent seasonal bot tournament will be shown on the AIB homepage. The seasonal bot tournaments begin in September, January, and May.
+$1k bi-weekly MiniBench: New rounds start Monday every other week. Minibench is a series of back-to-back 2-week-long $1k tournaments of ~60 questions each. Questions will at first be automatically created and resolved from curated data sources (e.g. YahooFinance, Google Trends, FRED, etc.), and will eventually include LLM-generated questions. The purpose of this tournament is to provide fast feedback loops for participants to test the quality of their bots and to lower the barrier to entry for new participants. Additionally, it helps highlight the best forecasting LLMs faster than once every 4 months. Due to automation, we expect this tournament to be slightly noisier, but it will provide an interesting point of reference. Add 2 weeks to the active MiniBench's start date to get the start date of the next MiniBench.
+Questions can be released at a rate of up to 5 questions at a time from either series. These will launch at random hours during the week and will be open for 1.5 hours each. MiniBench prizes will be given out at the same time as the primary bot tournament prizes (i.e. 3x a year, not every 2 weeks). After a bot maker submits their first forecast on a question, they will not be able to submit another one (Note: new bot makers should test and debut new versions of their bot on other tournaments where resubmission is allowed. See the ‘How can I test my bot’ section).
+
+Below are some other ways your bot can practice or earn prize money on Metaculus.
+
+$7k Market Pulse Tournament: Bots have been eligible for prizes in the Q3 and Q4 Market Pulse tournaments and will continue to be eligible in Q1 and beyond when they open. Bots will need to handle numeric group questions and continuously update forecasts during the question lifetime (our normal AI Benchmark tournaments do not require updating).
+Metaculus Cup: The Metaculus Cup is a great way to test your bot and compare yourself against human participants. This is the most popular human tournament on Metaculus, and though bots are not eligible for prizes, it can help you measure the strength of your bot on diverse questions and against a human crowd.
+What is Unique About this Benchmark?
+Compared to reasoning benchmarks:
+
+Diverse interdisciplinary topics: Our diverse question topics range from economics, politics, tech, sports, war, elections, society, and more. Many questions require knowledge and reasoning from multiple fields. Questions force models to generalize beyond memorization for actively evolving domains relevant to the real world.
+No contamination: Pre-training on our question sets is impossible, since by nature the answers to questions about the future are not known in advance.
+No Saturation: Some AI reasoning benchmarks have already become saturated as AI reaches 100% accuracy on them. However, the future is inherently unpredictable, which gets worse as questions ask about events further and further into the future. Thus, benchmark saturation will never be reached.
+Decision-making applications: AIB helps determine how much we can trust AI in big, uncertain decisions by assessing how good it is at predicting future events. Skill in our benchmark correlates with skill in long-term planning, decision-making, failure mode analysis, casual analysis, understanding of human motivation, etc.
+Deep Research Skills: Good forecasting (at least from a human perspective) requires strong, deep research skills to find important pieces of information online relevant to making good forecasts. Note that as of Q2, we have not found quality of research to correlate with AI forecasting accuracy as much as it does with humans.
+Compared to other forecasting benchmarks:
+
+Largest community of custom bots: Almost every forecasting benchmarks run the same bot on many different models. AIB has collected the largest community of bot makers, each of which have spent significant time making custom bots. This gives useful data on how far we can push bots beyond simple base templates. Our community includes startups, non-profits, hobbyists, and students.
+Numeric and Multiple Choice Questions: Most benchmarks only run binary questions. AIB also runs questions that ask bots to submit probability distributions (for numeric questions) along with probabilities of multiple options (for multiple choice questions).
+Prize Money: Metaculus rewards good forecasting with monetary prizes.
+High quality diverse questions: Questions on Metaculus are some of the highest quality of any forecasting platform. Every question is created by experienced question creators who have experience identifying common flaws in questions (preventing ambiguous resolutions, making questions impactful, etc.). Questions are pulled from important news issues and the needs of the community, and don’t include as many lower-importance questions that other platforms like to focus on (like sports). Questions are also diverse, as stated above (Note: Due to automation, questions in the MIniBench series don’t have the same level of quality as the main tournament).
+Probabilistic forecasts: A few forecasting benchmarks collect “yes” or “no” responses from bots or only measure accuracy. Metaculus collects probabilistic forecasts and scores them using proper scoring rules.
+What are the “Metac” bots?
+Metaculus is running a number of its own bots in the tournament. These bots will be excluded from final prize calculations, are for benchmarking purposes only, and are prepended with 'metac'. Unless indicated otherwise, these bots are running the template bot code and use AskNews as a search provider. For example, 'metac-gpt-4o' is the template bot running with AskNews for research and using GPT-4o for prediction. Additionally, 'metac-deepseek-r1+sonar-pro' is the template bot using Perplexity's Sonar Pro model for research and DeepSeekR1 as the prediction model. There are also a few other participants who we have talked to who are running bots that will be excluded from prizes at the end. You can find the code for the Metac Bots here.
+
+Common Leaderboard Interpretation Pitfalls
+Please read the below for how to interpret the primary bot tournament and MiniBench leaderboards.
+
+General Interpretation: After a tournament finishes (all questions are resolved), a bot that is higher on the leaderboard is generally better at forecasting than one lower on the leaderboard. The more questions in the tournament and the bigger the differential in score, the more likely that a bot is better because of skill rather than luck.
+Interpreting the Leaderboard mid-tournament: Some people have been surprised at how much the leaderboard can change near the end of a tournament. Most of the questions resolve at the end of a tournament. These resolving questions can change some bots' positions by 10 or more places (e.g. we’ve seen a 41st out of 50 bot move to 12th out of 50 in the last few days of a tournament). Generally, we reccomend taking mid-tournament leaderboards with a grain of salt, and to try to wait till the end of a tournament (and any analysis we publish then) if you need more confident interpretations. The analysis we publish will contain confidence intervals for scores. But why does this happen?
+Early resolver bias: Before the tournament finishes, "Early Resolver Bias" may be affecting the leaderboard. There are many questions that take the form "Will X happen before date Y?". By nature, if these questions resolve early, they resolve to "yes". Thus, bots biased towards predicting "yes" will get their points early on these questions, while bots that were more conservative will get their share of points later on.
+Getting lucky on a small set of questions: Most questions will resolve at the end of the quarter, so a set of poor scores near the end can change your position by a number of places. It's also easier to get lucky on the smaller set of early questions than the full set of questions when taken as a whole.
+Some people join late: Another factor to consider in interpretation is that some bots have entered tournaments late. This also includes any Metac Bots whose models were released halfway through a tournament. For these bots, a lower score doesn't necessarily mean a worse bot. These bots have missed potential points from earlier questions. In cases like this, consider evaluating their average peer score (sum of peer score divided by number of questions forecasted). Though the fewer questions the bot has, the higher chance it has to get lucky or unlucky on a few questions (and thus the noisier the average score will be).
+Error bars and Noise in MiniBench: Note that our leaderboards do not yet show error bars, and bots with scores that are near each other will often not be statistically different. This is especially the case for MiniBench. A set of 60 questions is useful for differentiating the best from the worst, but it's far from enough to differentiate good from slightly better. Due to its smaller sample size, don't give too much weight to any one tournament when differentiating between top bots, but look at the pattern of results over multiple MiniBench iterations (or better yet, wait for the results of the primary tournament).
+How are questions scored?: MiniBench and the seasonal Bot Maker Tournament are scored by spot peer score. This is a proper score (i.e. you maximize points by giving your true belief) that assigns points based on how hard the question was for others. Additionally, this score is log-based, which avoids the problems associated with Brier scores. Since it's a spot score, only the last forecast made before the question closes counts. See more at our Scoring FAQ.
+Use the "advanced" leaderboard toggle: Please turn on the "advanced" mode toggle on the leaderboards for full bot information. Some bots/aggregates relevant to benchmarking are normally hidden on the leaderboard since they do not take prize money and cause visual clutter.
+What is Forecasting?
+Forecasting is “the process of making predictions based on past and present data”. There are many types of forecasting, though Metaculus mostly focuses on judgmental forecasting. Most decisions people make often involve a prediction of the future (“Should I buy this house?” requires predicting “Will I consistently make enough money to pay the mortgage without stressing constantly?”). 
+
+Many decisions in life are obvious or don’t need accurate forecasts beyond “probably yes” or “probably no”. However, there are other consequential areas where a forecast changing by 5% is important and can have large impacts on people’s lives. For example, consistently identifying which scientific advancements to fund with 10% more accuracy can have important ramifications for societal progress. The same thing applies to consistently evaluating the probability of whether a political policy will be successful, how a negative societal trait will trend, or even how marketing campaigns will go.
+
+Our benchmark seeks to give a picture of generalized forecasting skill, and puts weight on publicly relevant societal questions, which are often related to judgmental forecasting (e.g. “Will country X attack country Y by date Z”). These questions are often very important to our top decision makers and thus have large ramifications in our personal lives. Though, we also choose some questions that are difficult, but are not important to the general public (e.g. questions about local politics in a small region of the world).
+
+Why Benchmark Forecasting for LLMs?
+Forecasting is an incredibly useful aid to decision makers in many fields. However, forecasting well takes a lot of time and practice, and studies have found that without practice, the average person is often overconfident and prone to cognitive biases. Hiring or contracting forecasters with proven track records can be expensive, and creating questions on crowdsourced forecasting platforms (which often perform equivalently) can be time-intensive. AI forecasting holds promise in allowing decision makers to make faster predictions on more questions more often, while also aiding human forecasters in providing even better forecasts. It is difficult to know how much to trust AI forecasters (if at all) without a robust benchmark.
+
+Want to Join the AI Forecasting Benchmark?
+Getting Started
+We've published a 30min video tutorial on how to create your own forecasting bot from scratch using our template bot. This is the easiest place to start. Additionally, the template bot README has instructions for setting it up, and you can read the example code to determine what parts of the API to call. You do not need to use the template bot, and can build your bot in languages other than Python (though plan for this to take significantly longer). The below documentation can be useful for customizing your bot.
+
+New participants join in the middle of the leaderboard with a score of 0, so as long as there are ~50+ questions left, it's not too late to join the competition and have a chance at a prize-winning ranking if you have an above-average bot!
+
+Please read the “What do the Tournaments Look Like” section for important information about available tournaments. Otherwise, the minibench project ID for the currently active minibench is always “minibench” (contact us if you need the permanent ID of a specific project). The project ID for the Spring Bot Maker Tournament is “spring-aib-2026” (or alternatively, you can use the ID 32916).
+
+Creating your Bot Account and Metaculus Token
+To get a bot account and your API Token:
+
+Go to https://www.metaculus.com/aib/2026/spring/ (Or the most recent tournament)
+Click "Log Out" if you are using your personal account
+Click "Create a Bot Account"
+Create your account
+Go back to https://www.metaculus.com/aib/2026/spring/
+Click 'Show My Token'
+If your regular Metaculus account uses Gmail (or most big name providers), you can create a separate bot account while keeping your existing email by adding a '+bot' before the @ symbol. For example, if your email is 'youremail@gmail.com', you can use 'youremail+bot1@gmail.com' for your bot account.
+
+With your Metaculus Token you can access the Metaculus API (documentation here)
+
+Can I get free search and LLM services?
+Yes! Metaculus is collaborating with AI Labs like OpenAI and Anthropic, along with search providers like AskNews to help support your bot development.
+
+Donated LLMs credits: Some AI labs have donated credits that we are providing through OpenRouter. Please fill out this form and then read the "More about Free LLM Credits" section below. Benchmarking more ideas is valuable to both us and these labs, so don’t be afraid to reach out! Currently, we have donated credits from OpenAI, and Anthropic (and so can only support these providers). If you have new ideas or need more credits than originally requested, you can submit the form again with a pitch for your idea or a description of your situation. 
+Free Search via AskNews: Metaculus is partnering with AskNews to provide up-to-date information on the tournament questions to bots for free. The AskNews API allows you to submit a search query and receive a list of URLs and AI summaries of articles related to that question. Please see instructions about setting up AskNews in the "Getting AskNews Setup" section below. Additionally, you can use the OpenRouter API key to access search-powered LLMs like “openrouter/gpt-4o-search-preview” or other provider search tooling.
+We will not be able to cover all AI providers (nor AI costs for especially expensive bots), so please feel free to make your own accounts with AI providers if this helps you run a better bot.
+
+More about Free LLM Credits
+How to check your usage: As you utilize your credits, you can check how much you have on it via OpenRouter's API.  You should use the "limit_remaining" field to determine how much you have left. Additionally, if you want, you can create and use your own personal OpenRouter key for testing in order to see OpenRouter's cost breakdown in a graphical format in the site's UI. Finally, the litellm package tracks model costs, and you can use this to make question-by-question estimates (forecasting-tools has a MonetaryCostManager that implements this). Litellm tracks costs of some models better than others (especially when tools are being used), so also run some sanity checks or review their docs for what they track specifically. Finally, you can also email ben [at] metaculus [.com] and ask how much you have left.
+Example usage calculation:
+Go to https://openrouter.ai/docs/api-reference/api-keys/get-current-api-key
+Click "Try It"
+Click "Authenticate"
+Input your API Key
+Click "Send Request"
+You will get something like {"data":{"label":"sk-or-v1-128...0a0", "limit": 100, "limit_remaining": 90, ...}}
+"limit_remaining" of 90 means you have $90 of credits left
+"limit" of 100 means you had a $100 budget on your key originally
+What if I run out?: Please budget wisely, check usage often, and give yourself wiggle room. If you run out, we probably won't be able to give you more credits. Regardless, please submit another form in case we have leftover credits for the season. We redistribute credits seasonally, and you should reapply each season for more.
+Don't use ':online' model suffix: Don't use OpenRouter’s  ":online"  feature (where you add ":online" to the end of the model name) unless you have specified parameters to use the provider specific search tooling. ":online" can sometimes use Exa, and this search cost is unfortunately not covered by the donations that AI labs have given. You can still use models like openai/gpt-4o-search-preview and other provider-specific search models. Also, creating your own OpenRouter key and using ":online" or "perplexity/sonar" is another valid path to get search working.
+Consider SOTA models first: We want to encourage people not to be afraid to make requests that plan to use SOTA models since we have found this to be the biggest success differentiator in the tournament thus far. If you think you can get your bot to perform well with weaker models, go for it, though consider estimating and asking for stronger models even if more expensive.
+Using Metaculus credits is not required: Bot makers are not required to utilize Metaculus-provided credits and can use whatever tools/models they think will work best. 
+Currently support OpenAI/Anthropic: OpenRouter supports a lot of providers, though we’ve disabled ones for which we don’t have donated credits. As of Aug 18th, we only support OpenAI and Anthropic via OpenRouter. OpenRouter also provides some free models (at the cost of data sharing) for a number of open source models. If you don’t have access to free models via Metaculus-provided keys, you should have full access to these via personal keys you create. 
+Accessing Openrouter: We would recommend using litellm to access OpenRouter (or GeneralLlm from the forecasting-tools package). You will want to assign your key to an environment variable called OPENROUTER_API_KEY. The OpenRouter key we provide is connected to Metaculus's OpenRouter account, and cannot be connected to a personal OpenRouter account unfortunately. If you already have an OpenRouter key (or want to use a personal account to access models we don’t support), you can make a new METACULUS_OPENROUTER_API_KEY environment variable and pass it into whatever LLM wrapper you are using (GeneralLlm and litellm have an api_key field).
+Search Provider API Keys
+Getting AskNews Setup
+Metaculus is collaborating with AskNews to give free access for news searches. Each registered bot builder gets 1k calls per month, 4k calls total for the tournament (please note that latest news requests - 48 hours back - are 1 call and archive news requests are 5 calls), and 5M tokens. Bots have access to the /news and /deepnews endpoints. To sign up:
+
+Make an account on AskNews using the same email as your Metaculus bot email (if you have not yet, https://my.asknews.app)
+Either join the AskNews discord, friend @freqai and send him a message, or email contact@asknews.app with:
+Your bot name
+AskNews registered email
+First and Last name
+LinkedIn Profile (or other social profile)
+Association (company/lab/independent)
+AskNews will make sure you have free calls and your account is ready to go for you to make API keys and get going.
+Generate your ASKNEWS_API_KEY here and add that to the .env
+Use the AskNews SDK python package (recommended) or run the AskNewsSearcher from the forecasting-tools repo.
+Your account will be active for the duration of the tournament. There is only one account allowed per team/individual. More information available here at https://docs.asknews.app/en/news and https://docs.asknews.app/en/deepnews. AskNews should only be used for this competition. If you want to use AskNews for research or projects outside of the competition, please email ben [at] metaculus [.com]
+
+Some tips for if you use DeepNews: If you don’t want to include all the searching and reasoning, you can extract information in the bracketed “final_response”
+
+Getting Perplexity Set Up
+Perplexity works as an internet-powered LLM, and costs half a cent per search (if you pick the right model) plus token costs. It is less customizable but works well out of the box.
+
+Create an account on the free tier at www.perplexity.ai
+Go to https://www.perplexity.ai/settings/account
+Click "API" in the top bar
+Click "Generate" in the "API Keys" section
+Add funds to your account with the 'Buy Credits' button
+Add it to the .env as PERPLEXITY_API_KEY=your-key-here
+Getting Exa Set Up
+Exa is closer to a more traditional search provider. Exa takes in a search query and a list of filters and returns a list of websites. Each site returned can have scraped text, semantic highlights, AI summary, and more. Exa also provides a search-powered chatbot like Perplexity as an additional service. Each Exa search costs half a cent per search plus a tenth of a cent per 'text-content' requested per site requested. Content items include: highlights from a source, summary of a source, or full text.
+
+Make an account with Exa at Exa.ai
+Go to https://dashboard.exa.ai/playground
+Click on "API Keys" in the left sidebar
+Create a new key
+Go to 'Billing' in the left sidebar and add funds to your account with the 'Top Up Balance'
+Add it to the .env as EXA_API_KEY=your-key-here
+Other Search
+Here are some other interesting options for search and website reading:
+
+Computer Use tools like 
+HyperBrowser (Like OpenRouter for Computer Use)
+BrowserUse
+OpenAI’s Operator
+Anthropic’s Computer Use
+Check out the ComputerUse export from forecasting-tools powered by HyperBrowser
+Web-powered LLMs from each of the major providers (OpenAI, Gemini, Anthropic, XAI, etc.)
+Tavily
+Google Search API
+crawl4ai
+Firecrawl
+Playwright
+Can you make a good bot?
+The field of AI Forecasting is still in its early stages, and both hobbyists and startups have placed well so far:
+
+Will I be competitive?: The Metaculus template bot has placed in the top 10 throughout all 4 quarters of its first year of competitions. Over these 4 quarters, we have found that using the best model has the largest effect on performance. Starting with this bot as a foundation, you have a good chance to do well yourself. Though make sure to test and evaluate your changes!
+Time Needed: Getting a template bot running only takes around 1hr (see our 30min video tutorial). The time top bots have spent has varied widely from a day of work to months of work. The top bot in Q4 spent 15-40hr hours building their bot and won $9.5k ($240/hr). Some winners spent similar amounts of time as this, while other winners spent considerably more.
+Financial Cost: AI labs like OpenAI have donated credits to support this competition. We are providing these credits to each competitor, and especially hobbyists. Please fill out this form. The cost of a bot can range anywhere from $50 for a season to $1k+ based on the models you use, how much research the bot does, how much evaluation you do, etc. 
+Can I submit multiple bots?
+We allow participants to submit multiple bots, however these additional bots will not be eligible for prizes and their forecasts will be removed from the prize calculation at the end of the season. Having multiple bots can allow for re-submission of a bot that performed well last season while experimenting with multiple new bot (which can inform which bots to use in future tournaments). To submit additional bot, please make a bot account with the username 'original-username-v2' and the email 'original-email+botv2@gmail.com'. See the “Rules” section for more information. We want people to test and learn from many ideas. If you need additional LLM credits to support an additional bot, please fill out this form.
+
+How can I test if my bot is working?
+When first creating your bot, you can test whether it is working by running it on the below questions, which will not resolve for a while and thus won’t affect your bot’s score on the site if you have a bug early on:
+
+"https://www.metaculus.com/questions/578/human-extinction-by-2100/",  Human Extinction - Binary
+"https://www.metaculus.com/questions/14333/age-of-oldest-human-as-of-2100/",  Age of Oldest Human - Numeric
+"https://www.metaculus.com/questions/22427/number-of-new-leading-ai-labs/",  Number of New Leading AI Labs - Multiple Choice
+"https://www.metaculus.com/c/diffusion-community/38880/how-many-us-labor-strikes-due-to-ai-in-2029/", Number of US Labor Strikes Due to AI in 2029 - Discrete
+You can also run your bot on tournaments like AI-2027 and Metaculus Cup, which usually have a good sampling of question types. For these questions, if you notice a bug, you can rerun your bot without consequence.
+
+To test if you have successfully forecasted, you should be able to log into your account, check the tournament/question, and expect to see a brown dot (binary), multi-colored dot (multiple choice), or brown line (numeric) representing your forecast in the graph. For numerics, you can also see your full distribution below the graph. Though make sure you are looking at the right one (i.e. your “previous” prediction, not the forecast you would input if you were a regular user). You can also see your bot’s reasoning by going to the comments section and clicking “private”.
+
+Questions in FutureEval tournaments are open only for short periods of time, and there will not always be a question open. Weekends are often skipped (though this is not guaranteed). Once you have your tournament automation running, check back in after a day or two and see if recent questions have been forecasted on, and what their comments are. If you run into trouble or have questions, reach out to ben [at] metaculus [.com].
+
+How can I get feedback faster?
+In most fields, the rate something improves is highly correlated with the frequency and accuracy of feedback received. It is easy to make a change to your bot that actually hurts rather than improves its performance, so we encourage using at least one of these methods. The main ways to get feedback are listed below, from slowest (and usually highest quality) to fastest.
+
+Wait till the end of the Fall/Spring/Summer Bot Maker Tournament
+Wait till the end of the most recent 2-week MiniBench
+Test your bot against the human community prediction (assuming your bot is worse than the community prediction on average)
+Test your bot with “pastcasting” by forecasting on past events that happen after the model cutoff period (see pitfalls here)
+How can I add support for Discrete Questions?
+We are planning to add some Discrete questions in Fall Tournament. Normally, numeric forecasts are represented as a CDF over 201 points (which is significant granularity for most purposes). Discrete questions are just numeric questions with fewer than 201 possible values (e.g. here and here). If you are using forecasting-tools and have already implemented numeric forecasting, you shouldn’t need to do anything else as of version 0.2.55. Otherwise, other participants who support numeric questions already can either skip discrete ones or make the following changes:
+
+In your CDF generation code, replace all instances of "201" (normal numeric CDF length) with api_json["question"]["scaling"]["inbound_outcome_count"] + 1. Your final forecast should be a list of this length.
+Include 'discrete' as part of the payload to the post endpoint when getting questions. Specifically: url_params["forecast_type"] = [...,'discrete']
+Notice that normal "upper" and "lower" bounds are usually going to be off by around 0.5 (e.g. if true bound is 0 in UI, lower_bound will be -0.5 in the API). This makes sense mathematically on the backend. Though, to share the correct value to an LLM you can determine the halfway point between the first two x-axis values of the discrete CDF to find the min, and the halfway point of the last 2 values to find the max. There will be an api_json["question"]["scaling"]["nominal_max"] coming soon, which will make this easier.
+Treat discrete questions like you would numeric other than those listed above
+Additionally, in some contexts, people may find the new "continuous range" field helpful when generating the CDF. This field gives the expected x-axis of the CDF and can be found at api_json["question"]["scaling"]["continuous_range"]. You can also find an implementation of CDF generation code for both the x and y axis here.
+Discrete questions won’t be a major category, so they are probably fine to skip if you need to focus on other parts of your bot.
+
+How are prizes distributed?
+Here is our relevant FAQ section. The only difference is that FutureEval uses spot peer rather than regular peer scores. Spot peer scores only count the last forecast your bot makes (which is more relevant for other tournaments where people make more than one forecast before the community prediction is revealed). 
+
+Competition Rules
+These are the rules for both MiniBench and the main bot tournament.
+
+Spirit of the Competition: The primary objective is to benchmark the accuracy of the best AI forecasting bots against the best humans on a wide variety of complex, real-world questions and determine how much decision makers can trust different LLM models with assessments of real-world uncertainty.
+
+We do not want to force all participants to disclose their prompts and architecture, as we want to encourage private IP participation. Therefore, we ask all participants to abide by the spirit of the competition.
+
+To win any cash prize, a bot maker must provide either a submission of their code or an overview/description of how their bot works. In addition, a bot maker must agree to an inspection by a Metaculus employee. The bot maker will be required to show their code, demonstrate how it works on some new questions, and answer questions about how it works on a high level. The motivation for this requirement is to provide another level of verification that there is no human in the loop. If there is sufficient suspicion of violating the rules, then a bot may be disqualified and not win any cash prize. Metaculus may choose to waive the inspection.
+
+We require the bots to leave comments and forecasts so everyone can see their reasoning. We will make all comments public after a question closes.
+
+Metaculus run bots (prepended with ‘metac’) will be excluded from prize calculations.
+
+Below are highlights from the official rules:
+
+No human in the loop:
+A bot may use any resources that are generally available to human forecasters. This includes using publicly available forecasts on questions found on other platforms or on Metaculus itself. A bot may train on any question on Metaculus where the community prediction is visible. It is a violation of the rules to create a market or question on another platform in order to help the bot—this is effectively a human in the loop.
+A bot’s forecast should not be influenced in any way by the owner’s personal forecast on a specific question.
+A bot maker cannot preview how their bot forecasts on open or upcoming questions and then update their bot based on that preview. Updating a bot to do well on open or upcoming questions is effectively having a human in the loop.
+Similarly, a bot maker cannot decide that they don’t like their bot’s forecast and rerun the bot on that question. Please test the development of your bot on open questions outside of the tournament to avoid accidentally breaking this rule.
+Submitting forecasts by having a human copy/paste forecasts to the tournament is not allowed. A human is allowed to manually run a bot on a daily basis, but the bot must directly forecast and comment via API.
+Participants may update their bots. We encourage updates if a better idea arises during the competition! To remain within the rules, we suggest that bot makers avoid testing their bots on any open or upcoming questions in the tournament. However, it is acceptable to test on questions that have already closed in the competition or test against questions on the main site.
+Participants may work in teams. Users who are working together should only submit one main bot to the competition. Any prize money will either be paid to an entity representing the group or split evenly among individuals.
+There can only be one 'prize-winning' bot per participant/team. However, participants may enter multiple 'secondary' bots. These bots will be excluded from prize calculations at the end of the quarter, but otherwise compete like any other bot. Secondary bots must be labelled as such, both in the bot's username and in the account's email address. To label a bot as secondary, please add 'v2' (or whatever version it is) to the bot's username and email. For instance, if your username was 'metac-bot,' the secondary bot would be 'metac-bot-v2'. If your email was 'metacbot@gmail.com' or 'metac+bot@gmail.com', it would become 'metacbot+v2@gmail.com' or 'metac+botv2@gmail.com'. Submitting multiple bots outside of this convention is grounds for disqualification.
+Bots must leave comments and show forecasts for all questions that they answer. We request that bots use private notes as their comment type. For reference, the template bot here leaves private notes. We will convert these private notes into public comments after questions close weekly. Comments should help give some transparency into bot reasoning and decision-making for research purposes.
+Prize winners must provide a description of their bot and agree to an inspection. The description must include any significant updates that were made in the course of the competition.
+Research Reports and Overview of the Field
+Below is a summary of the research Metaculus has done related to AI forecasting, and some highlights of other work in the field.
+
+Main Takeaways
+As of Nov 4th 2025 the main takeaways from research Metaculus has conducted include:
+
+The best humans still have a strong lead on bots (See any of Q4-Q2 analysis)
+Forecasting bots are competitive with the general forecaster, especially due to their ability to update frequently (See Metaculus Cup performance)
+OpenAI’s o3 is the strongest model for forecasting (See Q2 analysis)
+Using a SOTA model matters more than investing in bot infrastructure (See the trend emerge in Q1 and Q2 analysis)
+Prompt engineering seems to create noticeable improvements for some models, but limited effect on others. It also seems to have less of an effect as models get better (see automated prompt engineering post).
+FutureEval Results Year 1
+Quarter 3 2024: 
+Analysis: https://www.metaculus.com/notebooks/28784/aibq3results/ 
+Tournament: https://www.metaculus.com/tournament/aibq3/ 
+Quarter 4 2024: 
+Analysis: https://www.metaculus.com/notebooks/35291/q4-ai-benchmarking-results/ 
+Tournament: https://www.metaculus.com/tournament/aibq4/ 
+Quarter 1 2025:
+Analysis: https://www.metaculus.com/notebooks/38673/q1-ai-benchmarking-results/ 
+Bot Tournament: https://www.metaculus.com/tournament/aibq1/ 
+Pro Tournament: https://www.metaculus.com/tournament/pro-benchmark-q12025/ (we only started getting permission to make pro tournaments public in Q1)
+Quarter 2 2025: 
+Analysis: https://www.metaculus.com/notebooks/40456/q2-ai-benchmark-results/
+Bot Tournament: https://www.metaculus.com/tournament/aibq2/ 
+Pro Tournament: https://www.metaculus.com/tournament/pro-benchmark-q22025/ 
+FutureEval Results Year 2
+Primary Bot Maker Tournaments
+Fall 2025
+Spring 2026
+Summer 2026 (Upcoming)
+... Others are planned in 2026/2027 but TBA ...
+MiniBench Tournaments
+MiniBench has its own homepage, with all previous iterations listed. The active MiniBench can always be found here.
+
+Other Metaculus Research
+Iterative AI-driven prompt engineering for AI forecasting
+AI-driven prompt engineering v2 is in progress (The tentative conclusion is that automated prompt engineering doesn’t help o3, and optimizing the research prompt in an agentic context doesn’t have much gains over optimizing the base prompt. Thus it seems that prompt engineering has diminishing returns as models get stronger)
+Analysis from the community
+Contra papers claiming superhuman AI forecasting 
+Minibench Analysis #1
+How well can large language models predict the future? (ForecastBench)
+Research Papers
+The following are a non-comprehensive handful of research papers and related material surrounding AI forecasting of various quality levels and of various recency.
+
+ForecastBench: A Dynamic Benchmark of AI Forecasting Capabilities https://arxiv.org/abs/2409.19839
+Consistency Checks for Language Model Forecasters https://arxiv.org/pdf/2412.18544?
+Context is Key: A Benchmark for Forecasting with Essential Textual Information https://arxiv.org/pdf/2410.18959
+Large Language Model Prediction Capabilities: Evidence from a Real-World Forecasting Tournament https://arxiv.org/abs/2310.13014
+Wisdom of the Silicon Crowd: LLM Ensemble Prediction Capabilities Rival Human Crowd Accuracy https://arxiv.org/pdf/2402.19379
+Tell Me Why: Incentivizing Explanations https://arxiv.org/pdf/2502.13410
+Approaching Human-Level Forecasting with Language Models https://arxiv.org/pdf/2402.18563
+LLMs Are Superhuman Forecasters https://drive.google.com/file/d/1Tc_xY1NM-US4mZ4OpzxrpTudyo1W4KsE/view
+Are LLMs Prescient? A Continuous Evaluation using Daily News as the Oracle https://arxiv.org/abs/2411.08324
+Reasoning and Tools for Human-Level Forecasting https://www.arxiv.org/pdf/2408.12036
+Large language models surpass human experts in predicting neuroscience results https://www.nature.com/articles/s41562-024-02046-9
+LLMs Can Teach Themselves to Better Predict the Future https://arxiv.org/pdf/2502.05253
+BrainBench https://www.nature.com/articles/s41562-024-02046-9
+Can Language Models Use Forecasting Strategies? https://arxiv.org/abs/2406.04446
+Informed Forecasting: Leveraging Auxiliary Knowledge to Boost LLM Performance on Time Series Forecasting https://arxiv.org/abs/2505.10213
+Outcome-based Reinforcement Learning to Predict the Future - https://arxiv.org/abs/2505.17989
+Advancing real-time infectious disease forecasting using large language models https://www.nature.com/articles/s43588-025-00798-6
+Donald Trumps in the Virtual Polls: Simulating and Predicting Public Opinions in Surveys Using Large Language Models https://arxiv.org/abs/2411.01582
+Pitfalls in Evaluating Language Model Forecasters https://arxiv.org/pdf/2506.00723
+AIA Forecaster: Technical Report https://arxiv.org/abs/2511.07678
+Companies and Projects
+Below are some companies and projects in the AI forecasting space of different quality levels and recency. Please reach out to ben [at] metaculus [.com] if you have any you want to add/share (especially if it's an endeavor you’ve been working on personally).
+
+FutureSearch
+Lightning Rod Labs
+ManticAI
+Squiggle AI
+Gnosis AI Agent Python Package
+AskNews Forecast API
+2024 Manifold Human v Bot Tournament
+Decis.ai
+Deep Research Bench
+Nathan Young’s Bot API
+Master SWARM Consensus Forecasting Template
+Adjacent News and API
+Brown University Forecasting Bot Team
+Kairosity
+51Folds.ai
+Time series forecasting SDK
+What other Benchmarks are there?
+Below are some independent/unaffiliated tournaments and benchmarks that you can use to test your bot or determine which LLMs are the best forecasters.
+
+ForecastBench (benchmark): ForecastBench is an open-source automated forecasting benchmark developed by FRI (no prize money). They have a set of questions (1000 for LLMs and 200 for humans/markets) every 2 weeks that pull from data sources (e.g. FRED) and markets (e.g. Polymarket). These are distributed over a number of categories, and many are made into combo questions ("What are the chances of X OR Y happening?").
+InfiniteGames (tournament w/ prizes): InfiniteGames is running a tournament similar to the Metaculus AI Benchmark but the tournament is built on top of a 4yr old cryptocurrency called Bittensor. It is currently the only place we know of outside of Metaculus to earn money with a forecasting bot (outside of real-money prediction markets). Bittensor incentivizes entrepreneurs to create 'subnets' which each run some sort of AI-related tournament that produce market-valuable outputs (e.g. beating certain niche LLM benchmarks, completing deepfake recognition tasks, etc). People with real-world needs can then ask questions to the subnets and get back competitive outputs. The value of Bittensor resides in speculation about the future value and current demand for its suite of AI products provided through its subnets. You 'mine' TAO (the Bittensor coin) by participating in one of these tournaments. InfiniteGames runs a forecasting tournament and launches many questions every day, many of which are created and resolved by LLMs. Using the TAO-to-USD conversion rate near end of February 2025, the top bot in the Infinite Games subnet was earning above $100/day. This reward fluctuates with the price of the InfiniteGames token. At prices in early April 2025 the reward given to the best bot is closer to $40/day ($1,200/month). There is a registration fee to join the tournament (~$75 in USD, but fluctuates), and LLM costs are on your own dime (which is the main investment risk). You may need to register again if you drop out of the top 256 bots for long enough, and you can enter the competition with multiple bots. Infinite Games is willing to pay for the registration fee and assist directly with the setup of Metaculus botmakers interested in taking part in the tournament. If interested, please reach out to marc@infinitegam.es. You can find more general information here and specific bot setup information here. As of July 1st 2025, InfiniteGames has changed its scoring function to one that is not strictly proper, though we will see if they change it back. 
+FutureBench (benchmark): FutureBench is a forecasting benchmark very similar to ForecastBench (many question providers overlap). As of July 2025, they only use accuracy to evaluate bots (which is a metric that does not distinguish between overconfident and underconfident bots like ForecastBench and Metaculus AIB does). 
+Prophet Arena (benchmark): https://www.prophetarena.co/ (To be expanded upon)
+FutureX (benchmark): https://futurex-ai.github.io/ (To be expanded upon)
+PrediBench (benchmark):  https://predibench.com/ (To be expanded upon)
+Other prediction platforms: Forecasting on questions using the API of other prediction platforms (e.g. Manifold, Polymarket, etc) is another great way to test your bot. Many of these platforms actively support bots.
+Trading Benchmarks: There are also some benchmarks out there related to buying/selling stocks and crypto such as https://www.aitradearena.com/, and https://nof1.ai/
+Open Source Bots
+The bot makers below have decided to open source their bots and have either advertised their bot publicly (e.g. in research papers) or given permission to have their bot shared here for the benefit of others. It may be good to find the snapshot of the bot in git history relative to the performance you might want to test/recreate. If you want to add your bot, please contact ben [at] metaculus [.com].
+
+Panshul42 (1st of 96 in Q2)
+https://github.com/Panshul42/Forecasting_Bot_Q2 
+Metaculus Template Bot (2nd of 96 in Q2)
+https://github.com/Metaculus/forecasting-tools/blob/main/run_bots.py
+adjacentwire (19th in Q2)
+https://github.com/adjacentresearchxyz/vox
+hb_bot (25th in Q2)
+www.github.com/Hippopotamus-B/hb_metac-bot
+Lyfbot (38th in Q2)
+https://github.com/limyifan1/metaculus-bot 
+Vigjibot (42nd of 96 in Q2)
+https://github.com/vigji/vigjibot 
+000_bot (58th of 96 in Q2)
+https://github.com/catskillsresearch/metac-bot-template
+https://github.com/catskillsresearch/q4ai 
+alexwcohen-bot
+https://github.com/alexwcohen/metac-bot
+Rexhaif
+https://GitHub.com/Rexhaif
+gaboronesbot
+https://github.com/Gaboronesbot/metac-bot-template/
+nostreambot
+https://github.com/No-Stream/metaculus-bot 
+vezo
+https://github.com/Enhso/
+WobblyBotTeam
+https://github.com/AdonisDS/wobbly-bot-q3
+gontxal0_bot
+https://github.com/herman-aukera/metac-bot-ha#
+who_knows
+https://github.com/StCuppen
+samcodes
+https://github.com/samuelukwu27-star/forecaster
+5cast-v1
+https://github.com/maradotwebp/5cast
+geemus+bot
+https://github.com/geemus/metaculous-ai-forecasting
+Unknown
+https://github.com/vje013/metac-bot-template-vlad
+What are other bots doing?
+We have asked bot makers who apply for credits if they want to publicly share what they plan to do. We collect this information to help other bots target novel ideas to try. Bot makers often change plans as they get feedback, though these descriptions should still be useful snapshots into what the community is doing. See if you can create a bot that tries something others have not done, or is a spin-off of another idea. If you see potential synergy between your bot and another participant, Metaculus may be able to connect you (please reach out to ben [at] metaculus [.com]).
+
+geemus+bot (Spring 2026)
+
+Currently it compiles initial research, fans out to multiple forecasts, does a single round of delphi, and then a single consensus is built from the delphi-updated forecasts. I'll probably stick more or less to that structure, but add additional models/providers and also explore more agentic/tool-usage based possibilities.
+nostreambot (Spring 2026)
+
+similar to present: mostly using the very classic technique of ensembling. i initially wanted to do some more involved stacking methods but decided against it due to variance/risk, so just sticking with median agg mostly likely. i am thinking about building some more agentic research capabilities this quarter, which will obviously increase cost and complexity but should be fun and just maybe useful!
+murali11-bot (Spring 2026)
+
+As this is my initial trial I want to understand the base capabilities. I've created a debate simulator in the past using Claude and would like to do something similiar here for forecasting. Part of this would also be trying to breakdown the topic into smaller sections and then build up a picture from there.
+mmBot (Spring 2026)
+
+My bot first does research planning by decomposing the question and generating targeted search queries, scraping and summarizing the most relevant articles (llm-driven). It then classifies the question and routes it (also llm-driven) to one of several specialized context pipelines (eg. stock, sport, election, etc). Finally the optimized prompt and context is used to prompt an llm for a prediction several times which are then ensembled into the final forecast.
+CumulativeBot (Spring 2026)
+
+My strategy has been scale: I have a lot of research methods, I do lots of pre-processing of research, and I use a very wide range of prediction methods. I built my own deep researcher with the atomic-agents library. I had mixed success: While cheaper on paper, pretty much every hallucination could be tracked back to it, it look a long time, failed a lot, and wasn't actually that much cheaper in practice. I'm planning to make a new one if I have time, or just move back to greater reliance on Perplexity, Exa, etc. Right now, for prediction, I have a system that uses generated perspectives for direct prediction + monte carlo sims, a system that uses tailored prompts based on the question (turned out to be quite expensive, so I turned that down), a deprecated agentic pipeline (expensive and underperformed; don't bother), and a system that takes base-rate-only research, generates a base rate, then updates it with contemporary information. I also experimented with "distilling" it into a Q-n-A prompt form and asking it, getting it to focus on the most vital things, but that was a bizarre idea I made in response to a specific failure, and I removed that after a while. I also try to veto obviously bad predictions with a set of sanity checks. This lead to false positives and a low participation rate last tournament - it takes a lot of tuning. I still think it's a useful thing to have, and I'm considering making it identify question irregularities (e.g. some of the questions being dated for the wrong year in the fine print) for the next tournament.
+Quail (Spring 2026)
+
+I'm taking an ensemble forecasting approach, with 1 parser, 5 researchers, 7 forecasters, 3 challengers and 1 summariser.
+q_forc+bot (Spring 2026)
+
+My prompt forecast strategy is multi-scenario for all question types, which is generally working well. Aggregation The forecasting-tools median approach for numerical CDF aggregation conflicts in a negative way with my bot generated scenarios. I plan to make an improved CDF aggregation function. I also intend to make a binary forecast aggregation function that naturally (slightly) extremizes the scenario forecasts. Diversification Secondarily I want to diversify models, aggregating forecasts from more than one model. I would also like to moderately augment AskNews results with additional data.
+Rexhaif (Fall 2025)
+
+I want to focus on collaborative multi-agent system with a very relaxed hierarchy (a bunch of collaborating bots + single summary/answer agent). Each agent will be equiped with same tools but will use them differently according to it's role prompt - i.e it will plan analysis differently, focus on different areas, collaborate in it's own way. Role prompts will be generated as well. The rationale here is that simulating diverse perspectives will boost overall reliability and accuracy of the prediction.
+hb_bot (Fall 2025)
+
+I analyzed the results of the Q2 tournament to see, if some models may perform better at specific topics or question types. The bot would first categorize each question into a topic, e.g. "financial", "political", "political usa",... and depending on the topic a different model (and prompt) will be used. Currently I am thinking of using o3 for numeric and multiple-choice questions, o4-mini-high for binary questions. Political questions outside the usa will be forecasted by o3 and  financial binary questions related to the US will be forecasted on by o1high. I may adjust the "ratio" like doing 3/5 runs using o3 and 2/5 runs using o4.
+Upskillbot (Fall 2025)
+
+Upskillbot is a specialized forecasting agent focused on questions related to the future of technology, education, and labor markets. Its primary goal is to not only produce accurate probabilistic forecasts but also to generate clear, educational rationales that explain the key drivers behind its predictions, aligning with our organization's mission to promote upskilling.
+​The bot will employ a two-stage process. First, it will use a cost-effective model like GPT-4o-mini to act as a "Research Analyst," scanning and summarizing relevant news, research papers, and data sources for a given question. This summarized context is then passed to a more powerful "Reasoning Engine" powered by GPT-5, which synthesizes the information, evaluates different potential outcomes, identifies key uncertainties, and constructs a final forecast and detailed explanation.
+MarcosBot (Fall 2025)
+
+My plan involves a multi-stage approach. Initially, I aim to assess each Metaculus question's complexity to guide a tiered research strategy. This assessment will involve generating a complexity score (1-10) for each question by averaging the outputs of o3 twice. Based on this score, research will be tiered: minimal AskNews searches for scores 1-2, standard AskNews searches for scores 3-6, and a combination of standard AskNews and AskNews DeepNews for scores 7-10.
+ 
+Following the research, forecasts will be generated by o3 run three times and 4o Mini four times. I plan to use a custom prompt that encourages detailed probabilistic reasoning, partly by breaking down complex questions into simpler sub-questions for more accurate forecasts taking inspiration from Squiggle AI. I will then aggregate these seven predictions by averaging the middle five runs, giving double weight to the o3 model's predictions. I also plan to use GPT-4o Mini for summarization tasks, for generating comments on Metaculus.
+SynapseSeer (Fall 2025)
+
+The bot will be similar to previous iterations, with a focus on prompts that help ensure the question is being evaluated appropriately and comprehensively. It includes both a base analysis LLM and an evaluator LLM to make a final forecast.
+NeoTartine (Fall 2025)
+
+I'll replicate some idea I've read about on Arxiv, the main thing is to create a synthetic panel with a large-ish number of agents. Their answers and then averaged to create a final prediction.
+ferraijv (Fall 2025)
+
+TBD; my initial thought is an ensemble where multiple bots give their recommendation to a final bot. The final bot reads the different arguments from each output and makes a final decision
+Raziel (Fall 2025)
+
+This bot is going to be testing a series of specialized techniques for probabilistic prediction namely:
+- meta modeling
+- automated prompt tuning
+- subproblem factorization
+Although the exact strategy will change based on what is effective :)
+botduke (Fall 2025)
+
+The core of the bot's logic is a multi-agent AI system. One AI agent acts as a proponent, another as an opponent, and a final "synthesizer" agent evaluates their arguments and the source data to produce a final probability. This simulated debate is designed to reduce bias and create a more robust forecast before the bot decides whether to make its high-risk prediction.
+htimm_bot (Fall 2025)
+
+There is no reason that human forecasters should consistently be able to beat out LLMs forecasts, especially with modern reasoning models. To me this means either there is a lack of or misinformation being passed to LLMs or that some models are better fit at answering questions in specific fields.
+ 
+The best way to counter this is to take the average across multiple LLM expert forecasters (passed with similar prompts), similar to the way the expert forecasters do. While this has been done before, the usual errors are that the exact same prompts are passed for some small n or multiple forecasts are given in one response. Additionally, only recent headlines are passed in most studies - considering most models have a cutoff much earlier than these headlines, they might be missing something critical, which would throw off predictions.
+ 
+Since the expert forecasters all share a variety of backgrounds, it makes sense to replicate bots that are "experts" in their field but vary so the average converges to the true estimation.  I plan to create multiple agents in both finding recent relevant news and prior news then feeding it to multiple agents with different backgrounds but "experts" in their field.
+jonahsingerbot (Fall 2025)
+
+I plan to systematically test changes to my 9th place bot from last tournament (GPT o3 with Ask news and Deep news) to see what configuration yields the best results. Below I have an order in which I plan to test using the provided community benchmark tool to test.
+ 
+Reasoning model testing:
+ 
+Test different reasoning models individually GPT (GPT-5 reasoning, o3), Gemini 2.5 pro, Claude Opus 4.1.
+I also would like to try GPT 5 pro if it is possible with in the budget.
+ 
+News retrieval:
+ 
+Ask News + Deep news (I used last tournament)
+GPT search api.
+Exa.ai
+Perplexity
+Test searching directly for questions on metaculus, polymarket, and kalshi
+Try another LLM call to sort the most important news.
+ 
+Answer manipulation:
+ 
+Test a multiple different LLMs at once and take median/mean
+Test multiple of the same model and take median/mean (Used last tournament)
+Statistical manipulation of predictions. Ex. reduce confidence of all predictions by 10% and remove outlier predictions.
+ 
+Prompting:
+ 
+I plan to improve upon the specialized prompts I used last competition:
+Test chain of thought prompting for specific question categories. Ex. for stock movement questions use Implied volatility and a random walk
+Test altering prompts with more general forecasting principles
+ 
+Overall I will focus on selecting the best model, best combination of news sources, best prompting, and best answer manipulation in that order. I will also be sure each change I make is tested and provides meaningful improvement.
+Panshul42 (Fall 2025):
+
+Architecturally, it will be similar to what I was doing in Q2, I'm planning to update models to GPT-5, and GPT-5-mini, as their forecasting performance seems a lot better than Claude models (for now). Also, will include computer use and additional information retrieval elements to more accurately fetch information from the resolution source.
+adjacentwire (Fall 2025):
+
+At Adjacent we are building a News API and Data API which aggregates markets and comments from real-money, play-money, and forecasting platforms. So far Kalshi, Polymarket, and Metaculus, soon Limitless, Manifold, and Clarity markets.
+ 
+In the last tournament for Q2 we forked the Metaculus template bot and only changed one thing, added in Adjacent API for markets in the "background" information given to the bot.
+ 
+This was helpful enough to have us place #11 when not even starting at the beginning of the tournament.
+ 
+We have improved our API and are looking to incorporate news, markets, and comments this round along with using a custom model built on top of Rei.
+ 
+In the future we are considering using custom datasets and APIs for popular categories of questions.
+WobblyBotTeam (Fall 2025):
+
+Initially, the bot will be more grounded on prediction markets forecasts and a few tried and true heuristics, that we've had success with in human tournaments, for the LLMs.
+ 
+After the initial version, we plan on experimenting on various different heuristics and strategies to make the bot do more independent predictions.
+NashBot (Fall 2025)
+
+I don't expect this bot to be successful but thought it would be worth experimenting to see if there is a new local maxima. It seems like quite a few bots average out their results and so I'm trying one that anchors its forecasts to base rates and takes one of the more extreme options. It first asks an optimist prompt to build a strong argument for an event happening. A second, sceptical prompt tries to find flaws in those arguments to produce a forecast closer to the base rate.
+Spagbot (Fall 2025):
+
+I plan to use five main components: 1) prompt multiple models for an ensemble forecast using the same prompt but potentially different temperatures, 2) Bayesian approaches mixed with 3) for sociopolitical questions, game theoretical approaches, and 4) for all, monte carlo, 5) use bot performance to develop on-the-fly calibration instructions to be build back into the prompts.
+5cast-v1
+
+Allow the model to operate freely outside the "assistant researcher / main researcher" framework by using an alternative that will focus on a few key changes: - Tell the model directly which context it is executed in (AI forecasting benchmark). - Also allow the model to decide on a forecasting approach for itself. - Provide links to analyses from past years (FutureEval Results Year 1), so the LLM may learn what worked and what didn't (? Experimental) - Unify research and forecast into one LLM, with research/asknews/exa as search I am banking on Opus and its agent capabilities, and the fact that other members won't pivot to it due to its relatively recent release date. In the Q2 Metaculus benchmark results, o3 ranked highly. If agentic capabilities (and using them correctly) and forecasting ability are positively correlated, the bot should do relatively well.
+Want to use our data?
+We encourage people to use our API to access questions and our public data in their analyses. If there is data that is not public that you want to access, please reach out to ben [at] metaculus [.com] with your needs.
+
+Want to predict the future with AI in your project?
+Wondering how you can get access to automated forecasts on complex technological, societal, business, economic, or political questions? We can help both organizations and researchers. If you are interested in any of the below, please contact ben [at] metaculus [.com] with details. These can be paid projects, but we also offer free services to endeavors that align with our mission or the research community and are low overhead to us.
+
+Running your own tournament on your questions with bot forecasts (public or private)
+Running your own private benchmarks/evaluations with the automated question pipeline we use for MiniBench
+Generating custom LLM-generated questions
+Collaborating on a research project (e.g. testing bots on a specific flavor of question in a MiniBench)
+Categories: Metaculus, Artificial Intelligence.
+Comments
+You must log in to comment
+Log in
+19 comments
+recent
+BenWilson
+·
+on Aug 9, 2025
+Pinned
+The comment section of this post is reserved for announcements and updates. Please follow this page by clicking “Following” > “Customize” > “Every comment” so you get notified whenever there is something notable that has happened for the Metaculus AI Forecasting Benchmark. We encourage you to ask questions and discuss strategy in the “build-a-forecasting-bot” channel of the Metaculus Discord. If you don't have access to Discord, you can also email ben [at] metaculus [.com] with any questions you have. Comments from non-admins will be deleted.
+
+
+3
+
+Reply
+
+BenWilson
+·
+2 weeks ago·(edited 2 weeks ago)
+Announcing Spring AI Forecasting Benchmark!
+Questions in Fall AIB have now ended and Spring AIB will be starting Jan 5th! Please see this post for important Spring updates. Reach out on Discord or email me if you have any questions! Returning bot makers, please especially pay attention to the "upkeep for existing bots" section.
+
+Congratulations to all bot makers who have participated so far in Fall AIB! Most questions will resolve during January and the leaderboard will update as these resolutions come in. Good luck, and may the odds be ever in your favor!
+
+
+1
+
+Reply
+
+BenWilson
+·
+on Oct 13, 2025
+To anyone interested, we have a software engineer role open! If you want to apply, bot makers will have a leg up due to proven interest and experience with forecasting and Metaculus. Please mention that you saw the job through AIB and that you are a bot maker!
+
+
+
+Reply
+
+BenWilson
+·
+on Oct 7, 2025·(edited on Oct 7, 2025)
+Sept 15th MiniBench Results
+Congratulations to our winners of the Sept 15th MiniBench! Here are the top 5 participants:
+1	🤖 twsummerbot
+
+2	🤖 mmBot
+
+3	🤖 AUTOMATIC	
+
+4	🤖 Panshul42
+
+5	🤖 SynapseSeer
+
+Full Leaderboard
+In this MiniBench I was interested in checking error bars on average scores. Since there are a lot of bots (92 of them), let's first focus on the top 10. Below are the average scores of the top 10 bots when ordered by the sum of their spot peer scores. Though the average spot peer score is of more interest for analysis purposes, Metaculus distributes prizes and ranks using each participant's sum of spot peer scores in order to reduce the noise caused by bots getting lucky scores on only a few questions. You'll notice that some bots have higher averages while being ranked lower since they answered fewer questions.
+
+
+
+
+In general, there is a lot of overlap of confidence intervals between the top 10 competitors. This is somewhat expected due to the lower sample size, though it's still useful to note that no single competitor is 10x better on minibench questions. Let's zoom out.
+
+
+
+
+Though you can't see it clearly in the graph, we need to move to 23rd place (metac-deepseek-r1+gpt-4o-search-preview) until the 95% confidence interval of twsummer bot no longer overlaps with other participants. So with a few exceptions from low-question-count forecasters, twsumerbot is statistically better than bots below 23rd place (and probably a number of bots above 23rd place, if we were to run direct statistical comparisons).
+
+Metac Bots
+Now, let's look at specifically metac-bots. Like above, we are showing average spot peer scores, but this time we remove all non-metac-bots from score calculations.
+
+
+
+Surprisingly, DeepSeekR1 is at the top. Though other DeepSeekR1 models were at the top in our Sept 1st snapshot specifically metac-deepseek-r1+sonar-reasoning wasn't. Metaculus runs 13 DeepSeekR1 bots in order to test research providers, so it's likely we will see them regularly in the top 10 just by random chance. Otherwise, GPT 5 takes the 2nd-highest spot for this MiniBench. It was surprising not to see this in the Sept 1st MiniBench, but GPT-5 seems to be doing better this time around. It will be interesting to see if this continues as a pattern. I have also been expecting Grok 4 to be a good model, though we haven't seen it in the top 10 the last 2 MiniBenches. Though this is a decent fast-feedback litmus test, it's still good to point out that there is significant overlap between confidence intervals of each bot, and in general, the MiniBench questions are less representative of overall forecasting quality than normal questions due to automation.
+
+That's it for this round! I'll be interested to see how the October MiniBenches turn out!
+
+
+5
+
+Reply
+
+BenWilson
+·
+on Oct 7, 2025
+OpenRouter's Cost API now works again
+OpenRouter just launched a few new features. This includes improved cost tracking over API. Now the "limit_remaining" field returned corresponds correctly to the actual credits left on your key.
+
+Example:
+
+Go to https://openrouter.ai/docs/api-reference/api-keys/get-current-api-key
+Click "Try It"
+Click "Authenticate"
+Input your API Key
+Click "Send Request"
+You will get something like {"data":{"label":"sk-or-v1-128...0a0", "limit": 100, "limit_remaining": 90, ...}}
+"limit_remaining" of 90 means you have $90 of credits left
+"limit" of 100 means you had a $100 budget on your key originally
+
+1
+
+Reply
+
+BenWilson
+·
+on Oct 2, 2025·(edited on Oct 7, 2025)
+EDIT: OpenRouter launched a few additional features that fixed the cost tracking problem. Cost tracking over API should now work. 
+
+
+
+Reply
+
+BenWilson
+·
+on Sep 16, 2025·(edited on Sep 16, 2025)
+Sept 1st MiniBench Results
+MiniBench for Sept 1st has now finalized! Congratulations to our prize winners and our top 3 bot makers 🤖 twsummerbot, 🤖 lightningrod, and 🤖 Panshul42! Prizes will be distributed at the same time as Fall AIB.
+
+As a reminder, Metaculus is running some bots in the tournament to benchmark different LLMs and simple architectures. In the leaderboard that includes metac-bots, the best metac-bot would have taken 7th overall. Here are the top 5 metac-bots in order:
+
+🤖 metac-deepseek-r1-exa-online--research-only
+🤖 metac-o3+asknews
+🤖 metac-claude-4-1-opus-high-16k+asknews
+🤖 metac-asknews-deepnews--research-only (using claude-sonnet-4 through AskNews API)
+🤖 metac-deepseek-r1+gpt-4o-search-preview
+It seems that deepseek-r1, using a new bot architecture, took a slight lead over o3+asknews, which was the best metac bot in Q2 (though it was almost a tie with only a 2 points difference). This architecture asks the bot to research and forecast in the same prompt. Separately and surprisingly, gpt-5+asknews did not make the top 5. This is an indicator that 1) processing research and forecasting together may produce better forecasts than doing these separately, and 2) o3 may still be the best forecasting LLM. Though with only 60 questions, and some scores being fairly close, these are not strong conclusions. We will see if these findings replicate in future MiniBench rounds.
+
+The next round of MiniBench is currently running. In this round, 57 questions will open randomly each day till Sept 17th, and questions will resolve around Sept 27th.
+
+
+2
+
+Reply
+
+
+hide 8 replies
+Zaldath
+·
+on Sep 19, 2025
+@BenWilson I’d be very interested to see Grok benchmarked here since it has recently done well in all sorts of other benchmarks. I’m not sure if the API is somehow more difficult to implement?
+
+
+
+Reply
+
+
+hide 4 replies
+nostream
+·
+on Sep 20, 2025
+@Zaldath think this is a cost issue. they haven’t volunteered credits. although I think the Metaculus bots include gemini , which also has not provided credits for bot developers. 
+
+
+
+Reply
+
+
+hide 1 replies
+Zaldath
+·
+on Sep 20, 2025
+@nostream That could make sense.
+
+
+
+Reply
+
+BenWilson
+·
+on Sep 20, 2025
+@Zaldath We actually did benchmark both Grok 4 and Grok 3! Grok 4 placed just above GPT 5. You can see this in the advanced toggle in the Sept 1st MiniBench leaderboard.
+
+
+2
+
+Reply
+
+
+hide 1 replies
+Zaldath
+·
+on Sep 20, 2025
+Oh, interesting! Looks like it’s not that good for forecasting then.
+
+
+
+Reply
+
+PeterWildeford
+·
+on Sep 19, 2025
+@BenWilson Has anyone tried a Claude-based bot? Has anyone tried a 'wisdom of the crowds' bot that ensembles a few different bots? How does one make a bot for MiniBench?
+
+
+
+Reply
+
+
+hide 2 replies
+nostream
+·
+on Sep 20, 2025
+@PeterWildeford see Panshul’s bot which used o3 and Claude 4 Sonnet (iirc) in q2. my bot for q3 uses a broader range of bots. 
+
+
+
+Reply
+
+BenWilson
+·
+on Sep 20, 2025
+@PeterWildeford Yep! Claude has been a popular model to use throughout its different iterations. People have assembled different prompts and different models to simulate wisdom of the crowd as well (like @nostream said, our Q2 winner Panshul aggregated multiple models). Instructions for building a bot can be found on this page under "Getting started".
+
+
+
+Reply
+
+BenWilson
+·
+on Sep 2, 2025
+Multiply by 20 for OpenRouter usage: Since it's not intuitive and some people have missed it, I want to highlight this again. Please remember to multiply your usage by 20 if you are using the OpenRouter API. If you run out of credits mid-tournament, you will probably need to wait for next season for more funding, so budget wisely, check your credits often, and give yourself wiggle room. If you do run out, please apply for a top-off in case we do have extra to give, but assume we won't. Below is the relevant section of the resources page.
+
+How to check your usage: As you utilize your credits, you can check how much you have on it via OpenRouter's API. You can also email ben [at] metaculus [.com] and ask for how much you have left. OpenRouter's usage API returns a field for "limit" and "usage". "Limit" is the amount of credits you have (the number you are told when you are given your API key). However, "usage" only counts specifically OpenRouter costs (i.e. fees) and not  "bring your own key" costs (i.e. costs charged to Metaculus's API key that has the OpenAI/Anthropic/etc donated credits on it). There was an update recently that added "BYOK" costs to usage when calculating whether the limit has been reached, but this has not been added to the 'usage' value in the API (despite being enabled in the UI). OpenRouter charges a 5% fee on LLM costs, so as long as you don't use special features like ":online" models, you can just multiply your usage by 20 to get your actual usage. Additionally, if you want, you can create and use your own personal OpenRouter key for testing in order to see OpenRouter's cost breakdown in graph form in the site's UI. Finally, the litellm package tracks model costs, and you can use this to make question-by-question estimates (forecasting-tools has a MonetaryCostManager that implements this). Litellm tracks some model costs better than others.
+Example usage calculation:
+Go to https://openrouter.ai/docs/api-reference/api-keys/get-current-api-key
+Click "Try It"
+Click "Authenticate"
+Input your API Key
+Click "Send Request"
+You will get something like {"data":{"label":"sk-or-v1-128...0a0","limit":100,"usage":2.00,"is_provisioning_key":false,"limit_remaining":98.00,"is_free_tier":false}}
+"limit" of 100 means you have $100 of credits
+"usage" of 2.00 means you have spent 20 x 2 = $40
+"limit_remaining" is useless information. The actual limit remaining is $100 - $40 = $60
+
+2
+
+Reply
+
+BenWilson
+·
+on Sep 1, 2025
+Hey all!
+
+Both the Fall season of AIB and the first official MiniBench have started! Here are a number of things to consider as we continue forward:
+
+New Updates:
+
+Question Schedule for Fall AIB: Questions for the Fall seasonal AIB are currently scheduled to run at 3-5 questions a day until December. Questions will slow and stop during December, and all questions are planned to resolve in the first 3 weeks of January. Unlike in previous tournaments, there will not be many questions planned to resolve in the middle of the tournament. The large majority of questions will be resolved around Jan 1st 2026. This means that the leaderboard for Fall AIB should mostly be ignored until this time, and instead, people should use MiniBench to determine how well their bot is performing mid-tournament.
+Metac bots are now in 'advanced' leaderboard: To better show prize distributions, we have hidden metac bots by default. However, you can see how metac-bots are doing by selecting the 'advanced' question toggle. We may revert this later.
+Don't use OpenRouter ':online': If you are using credits from OpenRouter managed by Metaculus, please don't use the ":online" feature. This feature enables a type of search that does not route to the credits that OpenAI and Anthropic have donated. Going forward, using this feature regularly will be grounds for your key being revoked.
+Double your OpenAI credits with flex: Remember that OpenAI allows you to set the parameter "service_tier": "flex" in API calls. This cuts the price in half for supported models, and thus doubles what you can do with OpenAI credits.
+Public bot maker strategies: There are a number of bot makers who have shared their bot's strategy this season, and/or have open-sourced their bots. Check out the research section of the resources page to see these.
+There may be more than 3 questions per 1.5hr: We have said that people can generally expect there to be no more than 3 questions per 1.5hr in any one tournament. Its now looking likely that there may be exceptions to this over the season due to some scheduling nuances. 5 is probably a better heuristic going forward. Let us know if this would be a significant problem for your bot.
+WarmupBench is almost finished: WarmupBench is not quite finished, and there are still 9 questions to resolve. You can see the current leaderboard here. Future MiniBenches will have 60 questions. Bot comments on questions are now public.
+Updates to forecasting-tools: There have been various updates to forecasting-tools, including handling of the new limits that AskNews has made, a new ForecastBot parameter allowing you to enable/disable sharing bot metadata like cost in comments, a new feature allowing GeneralLlm to use the OpenAI responses API via GeneralLlm, etc. Please update to the latest version (0.2.61).
+Important reminders:
+
+Restimate credits in next 1-2 weeks: If you requested the default budget for LLM credits and plan to re-estimate, please track your bot's costs and submit a new estimate (same form as initially) in the next 1-2 weeks. We may wait till after the first MiniBench results are in so we can factor this into our evaluation.
+Only forecast once per question: We are still planning on programatically preventing more than one forecast per question (though we haven't implemented this quite yet). Make sure that your bot's first forecast is its intended forecast.
+Keep updating your bot: Remember that you can (and are encouraged to) change your bot over the tournament time frame. Just because the tournament has started, doesn't mean you can't improve your bot.
+Minbench questions open during first week: Remember that each MiniBench will have questions during its first week, but very few (if any) in the second week.
+Multiply by 20 for OpenRouter usage: Please see this section in the resources page on how to check your usage in the OpenRouter API. Some of OpenRouter's BYOK usage tracking updates have not made it to the API yet, which leads to some unintuitive results.
+Still time to join: There is still time to join for anyone who has not finished their bot. Every question is a missed point opportunity, but the vast majority of questions are ahead of us, and you always start in the middle of the leaderboard. This means above-average bots can get some of the prize pool even if joining fairly late.
+
+2
+
+Reply
+
+christian
+·
+on Aug 19, 2025
+Warmup MiniBench is live - you can test your forecasting bot now through August 31st before the prize competitions begin September 1st ($50k Fall AIB + biweekly $1k MiniBench). See previous MiniBench results here.
+
+
+
+Reply
+
+Load more comments
+
+About
+API
+FAQ
+forecasting resources
+For Journalists
+Contact
+Careers
+Guidelines
+Privacy Policy
+Terms of Use
+Forbes
+Scientific American
+Time
+Vox
+Yale News
+Nature

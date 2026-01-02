@@ -1,0 +1,44 @@
+{
+  "smoke-binary:binary:historical_context": {
+    "response": "Historical context ready. Search queries:\n1. example history (Google)\nProbability: 55%"
+  },
+  "smoke-binary:binary:current_context": {
+    "response": "Current context ready. Search queries:\n1. example current (Google News)\nProbability: 60%"
+  },
+  "smoke-binary:binary:prompt1:f1": { "response": "Preamble for forecaster 1. Probability: 55%" },
+  "smoke-binary:binary:prompt1:f2": { "response": "Preamble for forecaster 2. Probability: 50%" },
+  "smoke-binary:binary:prompt1:f3": { "response": "Preamble for forecaster 3. Probability: 52%" },
+  "smoke-binary:binary:prompt1:f4": { "response": "Preamble for forecaster 4. Probability: 48%" },
+  "smoke-binary:binary:prompt1:f5": { "response": "Preamble for forecaster 5. Probability: 53%" },
+  "smoke-binary:binary:prompt2:f1": { "response": "Final reasoning from f1.\nProbability: 55%" },
+  "smoke-binary:binary:prompt2:f2": { "response": "Final reasoning from f2.\nProbability: 50%" },
+  "smoke-binary:binary:prompt2:f3": { "response": "Final reasoning from f3.\nProbability: 52%" },
+  "smoke-binary:binary:prompt2:f4": { "response": "Final reasoning from f4.\nProbability: 48%" },
+  "smoke-binary:binary:prompt2:f5": { "response": "Final reasoning from f5.\nProbability: 53%" },
+
+  "smoke-numeric:numeric:historical_context": { "response": "Historical numeric context. Search queries:\n1. numeric historical (Google)" },
+  "smoke-numeric:numeric:current_context": { "response": "Current numeric context. Search queries:\n1. numeric current (Google News)" },
+  "smoke-numeric:numeric:prompt1:f1": { "response": "Base numeric forecast f1." },
+  "smoke-numeric:numeric:prompt1:f2": { "response": "Base numeric forecast f2." },
+  "smoke-numeric:numeric:prompt1:f3": { "response": "Base numeric forecast f3." },
+  "smoke-numeric:numeric:prompt1:f4": { "response": "Base numeric forecast f4." },
+  "smoke-numeric:numeric:prompt1:f5": { "response": "Base numeric forecast f5." },
+  "smoke-numeric:numeric:prompt2:f1": { "response": "Distribution:\n5: 10\n50: 20\n95: 35" },
+  "smoke-numeric:numeric:prompt2:f2": { "response": "Distribution:\n5: 12\n50: 22\n95: 36" },
+  "smoke-numeric:numeric:prompt2:f3": { "response": "Distribution:\n5: 11\n50: 24\n95: 38" },
+  "smoke-numeric:numeric:prompt2:f4": { "response": "Distribution:\n5: 13\n50: 26\n95: 40" },
+  "smoke-numeric:numeric:prompt2:f5": { "response": "Distribution:\n5: 14\n50: 28\n95: 42" },
+
+  "smoke-mcq:mcq:historical_context": { "response": "Historical MCQ context. Search queries:\n1. mcq historical (Google)" },
+  "smoke-mcq:mcq:current_context": { "response": "Current MCQ context. Search queries:\n1. mcq current (Google News)" },
+  "smoke-mcq:mcq:prompt1:f1": { "response": "MCQ step1 f1." },
+  "smoke-mcq:mcq:prompt1:f2": { "response": "MCQ step1 f2." },
+  "smoke-mcq:mcq:prompt1:f3": { "response": "MCQ step1 f3." },
+  "smoke-mcq:mcq:prompt1:f4": { "response": "MCQ step1 f4." },
+  "smoke-mcq:mcq:prompt1:f5": { "response": "MCQ step1 f5." },
+  "smoke-mcq:mcq:prompt2:f1": { "response": "Probabilities: [30, 40, 30]" },
+  "smoke-mcq:mcq:prompt2:f2": { "response": "Probabilities: [25, 35, 40]" },
+  "smoke-mcq:mcq:prompt2:f3": { "response": "Probabilities: [20, 40, 40]" },
+  "smoke-mcq:mcq:prompt2:f4": { "response": "Probabilities: [30, 30, 40]" },
+  "smoke-mcq:mcq:prompt2:f5": { "response": "Probabilities: [35, 35, 30]" }
+}

@@ -1,0 +1,154 @@
+{
+  "timestamp_utc": "2026-01-01T22:47:33.406048+00:00",
+  "run_kind": "custom_forecast",
+  "git_commit": "d096a22538d795845904cf604190237867aec5e5",
+  "models": {
+    "forecaster_1": "anthropic/claude-haiku-4.5",
+    "forecaster_2": "google/gemini-2.5-flash",
+    "forecaster_3": "openai/gpt-5-mini",
+    "forecaster_4": "openai/o4-mini",
+    "forecaster_5": "x-ai/grok-4-fast"
+  },
+  "default_weights": {
+    "binary": [
+      1,
+      1,
+      1,
+      2,
+      2
+    ],
+    "numeric": [
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "multiple_choice": [
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  "providers": {
+    "openrouter": {
+      "enabled": true,
+      "has_key": true,
+      "reason": ""
+    },
+    "perplexity": {
+      "enabled": true,
+      "has_key": true,
+      "reason": ""
+    },
+    "serper": {
+      "enabled": true,
+      "has_key": true,
+      "reason": ""
+    },
+    "asknews": {
+      "enabled": false,
+      "has_key": true,
+      "reason": "disabled or missing ASKNEWS creds"
+    },
+    "metaculus": {
+      "enabled": true,
+      "has_key": true,
+      "reason": ""
+    },
+    "bright_data": {
+      "enabled": true,
+      "has_key": true,
+      "reason": ""
+    }
+  },
+  "question": {
+    "title": "test",
+    "type": "binary",
+    "slug": "test"
+  },
+  "config": {
+    "profile": "baseline",
+    "enable_replay_mode": false,
+    "replay_fixtures_dir": "tests/fixtures/replay",
+    "replay_record": false,
+    "enable_evidence_lake": false,
+    "enable_smoke_tests": false,
+    "enable_diagnostics": true,
+    "research_source": "perplexity",
+    "research_flags": {
+      "DEFAULT_RESEARCH_SOURCE": "perplexity",
+      "ENABLE_PERPLEXITY": true,
+      "ENABLE_SERPER": true,
+      "ENABLE_BRIGHT_DATA": true,
+      "ENABLE_ASKNEWS": false,
+      "FALLBACK_TO_PERPLEXITY": true,
+      "PERPLEXITY_CALL_LIMIT": 2
+    },
+    "research_provider_status": {
+      "openrouter": {
+        "enabled": true,
+        "has_key": true,
+        "reason": ""
+      },
+      "perplexity": {
+        "enabled": true,
+        "has_key": true,
+        "reason": ""
+      },
+      "serper": {
+        "enabled": true,
+        "has_key": true,
+        "reason": ""
+      },
+      "asknews": {
+        "enabled": false,
+        "has_key": true,
+        "reason": "disabled or missing ASKNEWS creds"
+      },
+      "metaculus": {
+        "enabled": true,
+        "has_key": true,
+        "reason": ""
+      },
+      "bright_data": {
+        "enabled": true,
+        "has_key": true,
+        "reason": ""
+      }
+    },
+    "perplexity_call_limit": 2,
+    "fallback_to_perplexity": true,
+    "forecast_runs_per_model": 1,
+    "aggregation_mode": "weighted_mean",
+    "aggregation_trim_ratio": 0.1,
+    "probability_cap_low": 0.02,
+    "probability_cap_high": 0.98,
+    "enable_priors": false,
+    "enable_critique": false,
+    "prior_weight": 0.2
+  },
+  "search_counts": {},
+  "serper_url_stats": {
+    "attempted": 0,
+    "success": 0
+  },
+  "errors": [
+    "[ERROR] OpenRouter API error (status 401): {\"error\":{\"message\":\"User not found.\",\"code\":401}}",
+    "[ERROR] OpenRouter retryable error on attempt 1: 401, message='Unauthorized', url='https://openrouter.ai/api/v1/chat/completions'",
+    "[ERROR] OpenRouter API error (status 401): {\"error\":{\"message\":\"User not found.\",\"code\":401}}",
+    "[ERROR] OpenRouter retryable error on attempt 1: 401, message='Unauthorized', url='https://openrouter.ai/api/v1/chat/completions'",
+    "[ERROR] OpenRouter API error (status 401): {\"error\":{\"message\":\"User not found.\",\"code\":401}}",
+    "[ERROR] OpenRouter retryable error on attempt 2: 401, message='Unauthorized', url='https://openrouter.ai/api/v1/chat/completions'",
+    "[ERROR] OpenRouter API error (status 401): {\"error\":{\"message\":\"User not found.\",\"code\":401}}",
+    "[ERROR] OpenRouter retryable error on attempt 2: 401, message='Unauthorized', url='https://openrouter.ai/api/v1/chat/completions'",
+    "[ERROR] OpenRouter API error (status 401): {\"error\":{\"message\":\"User not found.\",\"code\":401}}",
+    "[ERROR] OpenRouter retryable error on attempt 3: 401, message='Unauthorized', url='https://openrouter.ai/api/v1/chat/completions'",
+    "[ERROR] Error during forecasting: 401, message='Unauthorized', url='https://openrouter.ai/api/v1/chat/completions'"
+  ],
+  "output_path": "C:\\Users\\l.lilloy\\OneDrive - Impax Asset Management Group plc\\Projects\\AI\\prediction bot\\Forecasting_Bot_Q2\\custom_forecasts\\test_20260101_2247\\forecast.txt",
+  "log_path": "C:\\Users\\l.lilloy\\OneDrive - Impax Asset Management Group plc\\Projects\\AI\\prediction bot\\Forecasting_Bot_Q2\\custom_forecasts\\test_20260101_2247\\run.log",
+  "raw_output_path": "C:\\Users\\l.lilloy\\OneDrive - Impax Asset Management Group plc\\Projects\\AI\\prediction bot\\Forecasting_Bot_Q2\\custom_forecasts\\test_20260101_2247\\raw_outputs\\raw.txt"
+}

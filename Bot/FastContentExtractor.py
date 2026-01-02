@@ -11,10 +11,11 @@ from browser import fetch_full_html
 dotenv.load_dotenv()
 
 API_KEY = os.getenv("BRIGHT_DATA_API_KEY")
+ZONE = os.getenv("BRIGHT_DATA_ZONE", "web_scraper")
 
 class FastContentExtractor:
     def __init__(self, api_key: str = API_KEY, 
-                 zone: str = "web_scraper"):
+                 zone: str = ZONE):
         self.api_key = api_key
         self.zone = zone
         self.api_url = "https://api.brightdata.com/request"

@@ -30,6 +30,11 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from forecaster import binary_forecast, numeric_forecast, multiple_choice_forecast
 from logging_utils import RunLogger, get_current_logger, set_current_logger
+from config import load_run_config
+from run_metadata import collect_runtime_metadata, write_metadata
+from baseline_snapshot import run_baseline_snapshot
+from benchmark_runner import run_benchmark
+from pathlib import Path
 
 def create_question_structure(
     question_type: str,
@@ -197,8 +202,10 @@ async def forecast_custom_question(question_params: Dict[str, Any]) -> None:
     Args:
         question_params: Dictionary containing question parameters from get_user_input()
     """
+    run_config = load_run_config()
     # Create the question structure
     question_details = create_question_structure(**question_params)
+    question_details["slug"] = _slugify(question_details["title"])
     
     print("\n" + "=" * 60)
     print("FORECASTING IN PROGRESS...")
@@ -277,7 +284,19 @@ async def forecast_custom_question(question_params: Dict[str, Any]) -> None:
                 raw_file.write("\n".join(log_buffer))
                 raw_file.write("\n```\n\n## Full comment\n")
                 raw_file.write(final_comment)
-    
+            metadata = collect_runtime_metadata(
+                run_kind="custom_forecast",
+                run_config=run_config,
+                question={"title": question_details["title"], "type": question_details["type"], "slug": run_slug},
+                logger=logger,
+                extra={
+                    "output_path": output_path,
+                    "log_path": log_path,
+                    "raw_output_path": raw_path,
+                },
+            )
+            write_metadata(os.path.join(run_dir, "metadata.json"), metadata)
+
     print(f"\nForecast completed. Results saved to: {run_dir}")
 
 def main():
@@ -285,17 +304,87 @@ def main():
     parser = argparse.ArgumentParser(description="Custom question forecaster")
     parser.add_argument(
         "--benchmark",
+        nargs="?",
+        const="benchmarks/questions.jsonl",
+        help="Run the benchmark dataset (defaults to benchmarks/questions.jsonl) instead of interactive mode.",
+    )
+    parser.add_argument(
+        "--diagnostics",
         action="store_true",
-        help="Run the Polymarket binary benchmark suite instead of interactive mode.",
+        help="Run provider diagnostics and exit.",
+    )
+    parser.add_argument(
+        "--diagnostics-live",
+        action="store_true",
+        help="Run diagnostics with lightweight live API checks (uses minimal quota).",
+    )
+    parser.add_argument(
+        "--smoke",
+        action="store_true",
+        help="Run the offline smoke suite using replay fixtures.",
+    )
+    parser.add_argument(
+        "--baseline-snapshot",
+        action="store_true",
+        help="Capture a baseline snapshot (binary/numeric/MCQ) using replay fixtures.",
+    )
+    parser.add_argument(
+        "--profile",
+        type=str,
+        help="Set RUN_CONFIG_PROFILE for this run (applies to all modes).",
+    )
+    parser.add_argument(
+        "--benchmark-output-dir",
+        type=str,
+        help="Optional output directory for benchmark runs.",
+    )
+    parser.add_argument(
+        "--benchmark-evidence-cutoff",
+        type=str,
+        help="Override evidence cutoff date (ISO) for all benchmark questions.",
+    )
+    parser.add_argument(
+        "--benchmark-live",
+        action="store_true",
+        help="Do not force replay defaults when running benchmarks.",
     )
 
     args = parser.parse_args()
 
     try:
-        if args.benchmark:
-            from polymarket_benchmark import run_polymarket_benchmark
+        if args.profile:
+            os.environ["RUN_CONFIG_PROFILE"] = args.profile
+        if args.diagnostics:
+            from diagnostics import print_results, run_diagnostics
 
-            asyncio.run(run_polymarket_benchmark())
+            results = asyncio.run(run_diagnostics(live_checks=args.diagnostics_live))
+            print_results(results)
+            return
+        if args.smoke:
+            from smoke_suite import SMOKE_SUITE_PATH, run_smoke_suite
+
+            os.environ.setdefault("ENABLE_REPLAY_MODE", "1")
+            os.environ.setdefault("REPLAY_FIXTURES_DIR", "tests/fixtures/replay")
+            summary = asyncio.run(run_smoke_suite(SMOKE_SUITE_PATH))
+            print(json.dumps(summary, indent=2))
+            return
+        if args.baseline_snapshot:
+            summary = asyncio.run(run_baseline_snapshot())
+            print(json.dumps(summary, indent=2))
+            return
+        if args.benchmark:
+            dataset = Path(args.benchmark)
+            if args.benchmark_live:
+                os.environ["ENABLE_REPLAY_MODE"] = "0"
+            out_dir = Path(args.benchmark_output_dir) if args.benchmark_output_dir else None
+            summary = asyncio.run(
+                run_benchmark(
+                    dataset,
+                    output_root=out_dir,
+                    evidence_cutoff=args.benchmark_evidence_cutoff,
+                )
+            )
+            print(json.dumps(summary, indent=2))
         else:
             question_params = get_user_input()
             asyncio.run(forecast_custom_question(question_params))

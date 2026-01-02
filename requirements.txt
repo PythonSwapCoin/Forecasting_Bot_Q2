@@ -12,3 +12,5 @@ readability-lxml
 requests
 scipy
 trafilatura
+pytest
+pytest-asyncio

@@ -1,0 +1,34 @@
+## Pipeline log
+```
+============================================================
+CUSTOM QUESTION FORECAST
+============================================================
+Question: test
+Type: binary
+Description: test
+Resolution Criteria: test
+Fine Print: test
+============================================================
+
+OpenRouter openai/o3-mini attempt 1
+OpenRouter openai/o3-mini attempt 1
+[ERROR] OpenRouter API error (status 401): {"error":{"message":"User not found.","code":401}}
+[ERROR] OpenRouter retryable error on attempt 1: 401, message='Unauthorized', url='https://openrouter.ai/api/v1/chat/completions'
+[ERROR] OpenRouter API error (status 401): {"error":{"message":"User not found.","code":401}}
+[ERROR] OpenRouter retryable error on attempt 1: 401, message='Unauthorized', url='https://openrouter.ai/api/v1/chat/completions'
+OpenRouter openai/o3-mini attempt 2
+OpenRouter openai/o3-mini attempt 2
+[ERROR] OpenRouter API error (status 401): {"error":{"message":"User not found.","code":401}}
+[ERROR] OpenRouter retryable error on attempt 2: 401, message='Unauthorized', url='https://openrouter.ai/api/v1/chat/completions'
+[ERROR] OpenRouter API error (status 401): {"error":{"message":"User not found.","code":401}}
+[ERROR] OpenRouter retryable error on attempt 2: 401, message='Unauthorized', url='https://openrouter.ai/api/v1/chat/completions'
+OpenRouter openai/o3-mini attempt 3
+OpenRouter openai/o3-mini attempt 3
+[ERROR] OpenRouter API error (status 401): {"error":{"message":"User not found.","code":401}}
+[ERROR] OpenRouter retryable error on attempt 3: 401, message='Unauthorized', url='https://openrouter.ai/api/v1/chat/completions'
+[ERROR] Error during forecasting: 401, message='Unauthorized', url='https://openrouter.ai/api/v1/chat/completions'
+
+ERROR: Error during forecasting: 401, message='Unauthorized', url='https://openrouter.ai/api/v1/chat/completions'
+```
+
+## Full comment
